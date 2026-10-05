@@ -1,0 +1,272 @@
+@import "tailwindcss";
+
+@layer utilities {
+  /* ==========================================================================
+     3D CLAYMORPHISM DESIGN SYSTEM (Matching User Reference Image)
+     Tactile, plasticine surfaces, deep radial backgrounds, soft dual shadows,
+     embossed pill buttons, and sunken segmented trays.
+     ========================================================================== */
+
+  /* 1. Canvas Background */
+  .clay-bg-canvas, .dash-canvas {
+    background-color: #1a56bc;
+    background-image: 
+      radial-gradient(circle at 50% 10%, #2970e6 0%, #1a56bc 45%, #0f3d8c 85%, #0a2b66 100%);
+    min-height: 100vh;
+  }
+
+  /* 2. Top Shell / Card Outer Frame */
+  .clay-shell {
+    background: #f0f5fc;
+    border-radius: 28px;
+    box-shadow: 
+      0 16px 36px -6px rgba(7, 24, 66, 0.4),
+      0 4px 12px rgba(7, 24, 66, 0.2),
+      inset 0 2px 4px rgba(255, 255, 255, 0.95),
+      inset 0 -2px 4px rgba(0, 0, 0, 0.05);
+    border: 2px solid rgba(255, 255, 255, 0.85);
+  }
+
+  /* 3. Puffy 3D Clay Cards */
+  .clay-glass-card, .clay-card, .dash-card {
+    background: #ffffff;
+    border-radius: 24px;
+    box-shadow: 
+      0 10px 25px -4px rgba(12, 38, 98, 0.12),
+      0 2px 6px rgba(12, 38, 98, 0.04),
+      inset 0 2px 4px rgba(255, 255, 255, 0.95),
+      inset 0 -2px 4px rgba(0, 0, 0, 0.03);
+    border: 1.5px solid rgba(255, 255, 255, 0.95);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .clay-card-interactive:hover {
+    transform: translateY(-2px);
+    box-shadow: 
+      0 14px 30px -4px rgba(12, 38, 98, 0.16),
+      0 4px 8px rgba(12, 38, 98, 0.06),
+      inset 0 2px 4px rgba(255, 255, 255, 0.95);
+  }
+
+  /* 4. Yellow Accent Clay Card */
+  .dash-card-yellow {
+    background: linear-gradient(145deg, #fef08a 0%, #fde047 50%, #facc15 100%);
+    border-radius: 24px;
+    box-shadow: 
+      0 10px 25px -4px rgba(202, 138, 4, 0.35),
+      inset 0 2px 4px rgba(255, 255, 255, 0.95),
+      inset 0 -2px 4px rgba(161, 98, 7, 0.15);
+    border: 1.5px solid #fef9c3;
+  }
+
+  /* 5. Blue Accent Clay Card */
+  .dash-card-blue {
+    background: linear-gradient(145deg, #3b82f6 0%, #2563eb 50%, #1d4ed8 100%);
+    color: #ffffff;
+    border-radius: 24px;
+    box-shadow: 
+      0 10px 25px -4px rgba(29, 78, 216, 0.45),
+      inset 0 2px 4px rgba(255, 255, 255, 0.5),
+      inset 0 -2px 4px rgba(0, 0, 0, 0.25);
+    border: 1.5px solid #60a5fa;
+  }
+
+  /* 6. Sunken Pill Tray (Segmented Navigation & Filter Trays) */
+  .clay-tray, .clay-sunken {
+    background: #dbe7f7;
+    border-radius: 9999px;
+    box-shadow: 
+      inset 0 3px 6px rgba(10, 30, 75, 0.16),
+      inset 0 -1px 2px rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+  }
+
+  /* 7. Clay Buttons */
+  /* Blue / Primary Clay Pill Button (like "TRY NOW" in clay reference) */
+  .clay-btn-apply, .clay-btn-blue, .clay-btn-primary {
+    background: linear-gradient(180deg, #3b82f6 0%, #2563eb 60%, #1d4ed8 100%);
+    color: #ffffff;
+    border-radius: 9999px;
+    font-weight: 700;
+    box-shadow: 
+      0 5px 15px rgba(29, 78, 216, 0.38),
+      inset 0 2px 3px rgba(255, 255, 255, 0.55),
+      inset 0 -2px 3px rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    transition: all 0.15s ease;
+    cursor: pointer;
+  }
+
+  .clay-btn-apply:hover, .clay-btn-blue:hover, .clay-btn-primary:hover {
+    background: linear-gradient(180deg, #60a5fa 0%, #3b82f6 60%, #1d4ed8 100%);
+    box-shadow: 
+      0 7px 18px rgba(29, 78, 216, 0.45),
+      inset 0 2px 3px rgba(255, 255, 255, 0.6),
+      inset 0 -2px 3px rgba(0, 0, 0, 0.25);
+    transform: translateY(-1px);
+  }
+
+  .clay-btn-apply:active, .clay-btn-blue:active, .clay-btn-primary:active {
+    transform: translateY(1px) scale(0.97);
+    box-shadow: 
+      inset 0 3px 5px rgba(0, 0, 0, 0.3),
+      0 2px 6px rgba(29, 78, 216, 0.2);
+  }
+
+  /* Emerald Clay Button */
+  .clay-btn-emerald {
+    background: linear-gradient(180deg, #10b981 0%, #059669 60%, #047857 100%);
+    color: #ffffff;
+    border-radius: 9999px;
+    font-weight: 700;
+    box-shadow: 
+      0 5px 15px rgba(4, 120, 87, 0.35),
+      inset 0 2px 3px rgba(255, 255, 255, 0.55),
+      inset 0 -2px 3px rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    transition: all 0.15s ease;
+    cursor: pointer;
+  }
+
+  .clay-btn-emerald:hover {
+    background: linear-gradient(180deg, #34d399 0%, #10b981 60%, #047857 100%);
+    box-shadow: 
+      0 7px 18px rgba(4, 120, 87, 0.42),
+      inset 0 2px 3px rgba(255, 255, 255, 0.6);
+    transform: translateY(-1px);
+  }
+
+  .clay-btn-emerald:active {
+    transform: translateY(1px) scale(0.97);
+    box-shadow: inset 0 3px 5px rgba(0, 0, 0, 0.3);
+  }
+
+  /* White Raised Clay Pill Button */
+  .clay-btn-white {
+    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 50%, #f1f5f9 100%);
+    color: #1e293b;
+    border-radius: 9999px;
+    font-weight: 700;
+    box-shadow: 
+      0 4px 12px rgba(12, 38, 98, 0.08),
+      inset 0 2px 3px rgba(255, 255, 255, 0.95),
+      inset 0 -2px 3px rgba(0, 0, 0, 0.04);
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    transition: all 0.15s ease;
+    cursor: pointer;
+  }
+
+  .clay-btn-white:hover {
+    background: #ffffff;
+    box-shadow: 
+      0 6px 16px rgba(12, 38, 98, 0.12),
+      inset 0 2px 3px rgba(255, 255, 255, 1);
+    transform: translateY(-1px);
+  }
+
+  .clay-btn-white:active {
+    transform: translateY(1px) scale(0.97);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.08);
+  }
+
+  /* Circular Icon Button */
+  .dash-circle-btn, .clay-circle-btn {
+    width: 42px;
+    height: 42px;
+    border-radius: 9999px;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+    box-shadow: 
+      0 4px 10px rgba(12, 38, 98, 0.08),
+      inset 0 2px 3px rgba(255, 255, 255, 0.95),
+      inset 0 -2px 3px rgba(0, 0, 0, 0.04);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    transition: all 0.15s ease;
+    cursor: pointer;
+  }
+
+  .dash-circle-btn:hover, .clay-circle-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 14px rgba(12, 38, 98, 0.12);
+  }
+
+  .dash-circle-btn:active, .clay-circle-btn:active {
+    transform: translateY(1px) scale(0.95);
+  }
+
+  /* 8. Clay Raised Chips (for individual items / sub-cards) */
+  .clay-chip-white {
+    background: #ffffff;
+    border-radius: 18px;
+    box-shadow: 
+      0 3px 10px rgba(12, 38, 98, 0.05),
+      inset 0 1px 2px rgba(255, 255, 255, 0.95),
+      inset 0 -1px 2px rgba(0, 0, 0, 0.02);
+    border: 1px solid #e2e8f0;
+  }
+
+  /* 9. Pill Search & Inputs */
+  .clay-search-pill, .dash-search-pill {
+    background: #ffffff;
+    border-radius: 9999px;
+    box-shadow: 
+      inset 0 2px 4px rgba(12, 38, 98, 0.06),
+      0 2px 6px rgba(12, 38, 98, 0.04);
+    border: 1.5px solid #cbd5e1;
+    transition: all 0.15s ease;
+  }
+
+  .clay-search-pill:focus-within, .dash-search-pill:focus-within {
+    border-color: #3b82f6;
+    box-shadow: 
+      inset 0 2px 4px rgba(12, 38, 98, 0.06),
+      0 0 0 3px rgba(59, 130, 246, 0.2);
+  }
+
+  /* 10. Clay Table Sheet */
+  .clay-table-sheet {
+    background: #ffffff;
+    border-radius: 24px;
+    box-shadow: 
+      0 12px 30px -6px rgba(12, 38, 98, 0.1),
+      0 2px 6px rgba(12, 38, 98, 0.04),
+      inset 0 2px 4px rgba(255, 255, 255, 0.95);
+    border: 1.5px solid rgba(226, 232, 240, 0.9);
+  }
+
+  /* 11. Tactile Status Pills */
+  .status-pill-critical {
+    background: linear-gradient(180deg, #fee2e2 0%, #fecaca 100%);
+    color: #991b1b;
+    border-radius: 9999px;
+    font-weight: 700;
+    box-shadow: 
+      0 2px 6px rgba(239, 68, 68, 0.18),
+      inset 0 1px 2px rgba(255, 255, 255, 0.8);
+    border: 1px solid #fca5a5;
+  }
+
+  .status-pill-watch {
+    background: linear-gradient(180deg, #e0f2fe 0%, #bae6fd 100%);
+    color: #0369a1;
+    border-radius: 9999px;
+    font-weight: 700;
+    box-shadow: 
+      0 2px 6px rgba(14, 165, 233, 0.18),
+      inset 0 1px 2px rgba(255, 255, 255, 0.8);
+    border: 1px solid #7dd3fc;
+  }
+
+  .status-pill-stable {
+    background: linear-gradient(180deg, #dcfce7 0%, #bbf7d0 100%);
+    color: #15803d;
+    border-radius: 9999px;
+    font-weight: 700;
+    box-shadow: 
+      0 2px 6px rgba(34, 197, 94, 0.18),
+      inset 0 1px 2px rgba(255, 255, 255, 0.8);
+    border: 1px solid #86efac;
+  }
+}

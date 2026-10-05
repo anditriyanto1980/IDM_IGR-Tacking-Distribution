@@ -1,0 +1,7 @@
+{
+  "name": "LogiTrack DC - Sistem Kontrol Distribusi & Stok",
+  "description": "Sistem controlling pengiriman produk ke DC Indomarco dan Indogrosir nasional berbasis forecast dan pemantauan stok gudang.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
