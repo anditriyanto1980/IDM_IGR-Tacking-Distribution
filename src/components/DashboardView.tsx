@@ -197,14 +197,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1">
         <div>
           <div className="flex items-center gap-2.5">
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+            <h1 className="text-2xl sm:text-3xl font-black text-amber-300 tracking-tight drop-shadow-sm">
               Dashboard Controlling Distribusi
             </h1>
             <span className="text-[11px] font-extrabold px-3 py-1 rounded-full bg-white text-blue-800 shadow-xs border border-white">
               Nasional Q2-2026
             </span>
           </div>
-          <p className="text-xs sm:text-sm text-slate-600 font-medium mt-1">
+          <p className="text-xs sm:text-sm text-white font-medium mt-1 drop-shadow-xs">
             Monitoring komparasi target forecast DC Indomarco & Indogrosir, realisasi pengiriman, dan ketersediaan stok pabrik
           </p>
         </div>
@@ -456,20 +456,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       <div className="space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
-            <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+            <h2 className="text-lg sm:text-xl font-black text-amber-300 tracking-tight flex items-center gap-2 drop-shadow-sm">
               <span>Rincian Target Forecast & Realisasi per Produk</span>
-              <span className="text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800">
+              <span className="text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-white text-blue-800 shadow-xs">
                 IDM vs IGR
               </span>
             </h2>
-            <p className="text-xs text-slate-600 font-semibold mt-0.5">
+            <p className="text-xs text-white font-medium mt-0.5 drop-shadow-xs">
               Tabel komparasi kuantiti target, barang sudah terkirim, dan persentase capaian per masing-masing SKU produk kurma
             </p>
           </div>
 
           <button
             onClick={() => setActiveTab('matrix')}
-            className="text-xs font-bold text-blue-700 hover:text-blue-900 flex items-center gap-1 self-start sm:self-auto cursor-pointer"
+            className="text-xs font-bold text-amber-300 hover:text-white flex items-center gap-1 self-start sm:self-auto cursor-pointer drop-shadow-xs transition-colors"
           >
             <span>Buka Matriks Detail DC &rarr;</span>
           </button>

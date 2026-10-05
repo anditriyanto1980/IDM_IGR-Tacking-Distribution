@@ -125,10 +125,10 @@ export const ControllingMatrixView: React.FC<ControllingMatrixViewProps> = ({
       {/* Header and Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2">
         <div>
-          <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+          <h1 className="text-xl sm:text-2xl font-black text-amber-300 tracking-tight drop-shadow-sm">
             Matriks Controlling Realisasi vs Forecast
           </h1>
-          <p className="text-xs text-slate-600 font-semibold mt-0.5">
+          <p className="text-xs text-white font-medium mt-0.5 drop-shadow-xs">
             Evaluasi persentase capaian pengiriman ke DC Indomarco & Indogrosir per wilayah dan produk
           </p>
         </div>

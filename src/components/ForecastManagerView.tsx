@@ -174,14 +174,14 @@ export const ForecastManagerView: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+            <h1 className="text-xl sm:text-2xl font-black text-amber-300 tracking-tight drop-shadow-sm">
               Pengaturan Alokasi Target Forecast DC
             </h1>
             <span className="px-2.5 py-0.5 rounded-full bg-white text-blue-700 text-xs font-bold border border-white shadow-xs">
               Nasional
             </span>
           </div>
-          <p className="text-xs text-slate-600 font-semibold mt-0.5">
+          <p className="text-xs text-white font-medium mt-0.5 drop-shadow-xs">
             Tentukan kuantiti target awal pengiriman per titik DC dan produk untuk mengontrol realisasi pengiriman
           </p>
         </div>

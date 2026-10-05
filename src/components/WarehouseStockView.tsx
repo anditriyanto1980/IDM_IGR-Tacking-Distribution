@@ -57,10 +57,10 @@ export const WarehouseStockView: React.FC<WarehouseStockViewProps> = ({
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2">
         <div>
-          <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+          <h1 className="text-xl sm:text-2xl font-black text-amber-300 tracking-tight drop-shadow-sm">
             Manajemen & Saldo Stok Gudang
           </h1>
-          <p className="text-xs text-slate-600 font-semibold mt-0.5">
+          <p className="text-xs text-white font-medium mt-0.5 drop-shadow-xs">
             Monitoring ketersediaan barang di setiap gudang, mutasi pengiriman, dan penerimaan stok baru
           </p>
         </div>
