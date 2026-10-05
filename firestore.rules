@@ -1,0 +1,97 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny all unknown collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    // 1. Products Master Collection
+    match /products/{productId} {
+      allow read: if true;
+      allow create, update: if isValidId(productId) &&
+        incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 200 &&
+        incoming().sku is string && incoming().sku.size() > 0 && incoming().sku.size() <= 50;
+      allow delete: if true;
+    }
+
+    // 2. Warehouses Collection
+    match /warehouses/{warehouseId} {
+      allow read: if true;
+      allow create, update: if isValidId(warehouseId) &&
+        incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 200 &&
+        incoming().code is string && incoming().code.size() > 0 && incoming().code.size() <= 50;
+      allow delete: if true;
+    }
+
+    // 3. Distribution Centers (DC Indomarco & Indogrosir)
+    match /dcs/{dcId} {
+      allow read: if true;
+      allow create, update: if isValidId(dcId) &&
+        incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 200 &&
+        incoming().network in ['Indomarco', 'Indogrosir'];
+      allow delete: if true;
+    }
+
+    // 4. Target Forecast Collection
+    match /forecasts/{forecastId} {
+      allow read: if true;
+      allow create, update: if isValidId(forecastId) &&
+        incoming().dcId is string && incoming().dcId.size() > 0 &&
+        incoming().productId is string && incoming().productId.size() > 0 &&
+        incoming().forecastQty is number && incoming().forecastQty >= 0;
+      allow delete: if true;
+    }
+
+    // 5. Warehouse Stock Balances
+    match /stocks/{stockId} {
+      allow read: if true;
+      allow create, update: if isValidId(stockId) &&
+        incoming().warehouseId is string && incoming().warehouseId.size() > 0 &&
+        incoming().productId is string && incoming().productId.size() > 0 &&
+        incoming().qty is number;
+      allow delete: if true;
+    }
+
+    // 6. Shipments / Sales Orders (SO)
+    match /shipments/{shipmentId} {
+      allow read: if true;
+      allow create, update: if isValidId(shipmentId) &&
+        incoming().soNumber is string && incoming().soNumber.size() > 0 && incoming().soNumber.size() <= 100 &&
+        incoming().productId is string && incoming().productId.size() > 0 &&
+        incoming().qty is number && incoming().qty > 0 &&
+        incoming().sourceWarehouseId is string && incoming().sourceWarehouseId.size() > 0 &&
+        incoming().targetDcId is string && incoming().targetDcId.size() > 0 &&
+        incoming().status in ['Terkirim', 'Dalam Perjalanan', 'Selesai', 'Dibatalkan'];
+      allow delete: if true;
+    }
+
+    // 7. Stock Mutations Audit Log
+    match /mutations/{mutationId} {
+      allow read: if true;
+      allow create: if isValidId(mutationId) &&
+        incoming().timestamp is string && incoming().timestamp.size() > 0 &&
+        incoming().type in ['OUT_SHIPMENT', 'IN_RECEIPT', 'ADJUSTMENT', 'VOID_SHIPMENT'] &&
+        incoming().warehouseId is string && incoming().warehouseId.size() > 0 &&
+        incoming().productId is string && incoming().productId.size() > 0 &&
+        incoming().qtyChange is number &&
+        incoming().resultingQty is number;
+      allow update, delete: if false; // Audit trail is immutable
+    }
+
+    // Test connection document
+    match /test/connection {
+      allow read: if true;
+    }
+  }
+}

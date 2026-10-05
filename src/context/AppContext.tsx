@@ -7,9 +7,7 @@ import {
   Shipment, 
   WarehouseStock, 
   StockMutation, 
-  DCControllingSummary,
-  DCNetwork,
-  Region
+  DCControllingSummary 
 } from '../types';
 import { 
   INITIAL_PRODUCTS, 
@@ -20,6 +18,20 @@ import {
   INITIAL_SHIPMENTS, 
   INITIAL_MUTATIONS 
 } from '../data/initialData';
+import { testConnection } from '../lib/firebase';
+import {
+  seedInitialFirestoreData,
+  setupFirestoreListeners,
+  saveProductToFirestore,
+  deleteProductFromFirestore,
+  saveWarehouseToFirestore,
+  saveForecastToFirestore,
+  batchSaveForecastsToFirestore,
+  saveStockToFirestore,
+  saveShipmentToFirestore,
+  deleteShipmentFromFirestore,
+  saveMutationToFirestore
+} from '../services/firebaseService';
 
 interface AppContextType {
   products: Product[];
@@ -30,6 +42,7 @@ interface AppContextType {
   shipments: Shipment[];
   mutations: StockMutation[];
   controllingSummaries: DCControllingSummary[];
+  isFirebaseConnected: boolean;
   
   // Product actions
   addProduct: (product: Omit<Product, 'id'>) => Product;
@@ -73,6 +86,8 @@ const STORAGE_KEYS = {
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean>(false);
+
   // Load from localStorage or initial
   const [products, setProducts] = useState<Product[]>(() => {
     try {
@@ -137,7 +152,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
-  // Sync state to localStorage
+  // Test Firebase connection & initialize real-time synchronization
+  useEffect(() => {
+    let unsubscribeAll: (() => void) | undefined;
+
+    const initFirebase = async () => {
+      const connected = await testConnection();
+      setIsFirebaseConnected(connected);
+
+      // Seed if empty
+      await seedInitialFirestoreData();
+
+      // Listen for real-time cloud updates
+      unsubscribeAll = setupFirestoreListeners({
+        onProducts: (cloudProducts) => setProducts(cloudProducts),
+        onWarehouses: (cloudWarehouses) => setWarehouses(cloudWarehouses),
+        onDcs: (cloudDcs) => setDcs(cloudDcs),
+        onForecasts: (cloudForecasts) => setForecasts(cloudForecasts),
+        onStocks: (cloudStocks) => setStocks(cloudStocks),
+        onShipments: (cloudShipments) => setShipments(cloudShipments),
+        onMutations: (cloudMutations) => setMutations(cloudMutations),
+      });
+    };
+
+    initFirebase();
+
+    return () => {
+      if (unsubscribeAll) unsubscribeAll();
+    };
+  }, []);
+
+  // Sync state to localStorage (as immediate offline cache)
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
   }, [products]);
@@ -186,34 +231,52 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setProducts(prev => [...prev, newProduct]);
+    saveProductToFirestore(newProduct);
 
-    // Initialize stock of 0 in all warehouses
+    // Initialize stock in all warehouses
+    warehouses.forEach(wh => {
+      const stockItem: WarehouseStock = {
+        warehouseId: wh.id,
+        productId: newProduct.id,
+        qty: 1000
+      };
+      saveStockToFirestore(stockItem);
+    });
+
     setStocks(prev => {
       const newEntries: WarehouseStock[] = warehouses.map(wh => ({
         warehouseId: wh.id,
         productId: newProduct.id,
-        qty: 1000 // give initial sample stock
+        qty: 1000
       }));
       return [...prev, ...newEntries];
     });
 
     // Initialize forecast for all DCs with default 1000
-    setForecasts(prev => {
-      const newFc: ForecastItem[] = dcs.map(dc => ({
-        id: `fc-${dc.id}-${newProduct.id}`,
-        dcId: dc.id,
-        productId: newProduct.id,
-        forecastQty: 1000,
-        period: 'Q2-2026 Nasional'
-      }));
-      return [...prev, ...newFc];
-    });
+    const newFcs: ForecastItem[] = dcs.map(dc => ({
+      id: `fc-${dc.id}-${newProduct.id}`,
+      dcId: dc.id,
+      productId: newProduct.id,
+      forecastQty: 1000,
+      period: 'Q2-2026 Nasional'
+    }));
+
+    batchSaveForecastsToFirestore(newFcs);
+
+    setForecasts(prev => [...prev, ...newFcs]);
 
     return newProduct;
   };
 
   const updateProduct = (id: string, updates: Partial<Product>) => {
-    setProducts(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
+    setProducts(prev => prev.map(p => {
+      if (p.id === id) {
+        const updated = { ...p, ...updates };
+        saveProductToFirestore(updated);
+        return updated;
+      }
+      return p;
+    }));
   };
 
   const deleteProduct = (id: string): { success: boolean; message?: string } => {
@@ -229,6 +292,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setProducts(prev => prev.filter(p => p.id !== id));
     setStocks(prev => prev.filter(s => s.productId !== id));
     setForecasts(prev => prev.filter(f => f.productId !== id));
+
+    deleteProductFromFirestore(id);
     return { success: true };
   };
 
@@ -239,8 +304,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: `wh-${Date.now()}`
     };
     setWarehouses(prev => [...prev, newWh]);
+    saveWarehouseToFirestore(newWh);
 
     // initialize 0 stocks for all products
+    products.forEach(p => {
+      const sItem = { warehouseId: newWh.id, productId: p.id, qty: 0 };
+      saveStockToFirestore(sItem);
+    });
+
     setStocks(prev => {
       const newEntries = products.map(p => ({
         warehouseId: newWh.id,
@@ -254,7 +325,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateWarehouse = (id: string, updates: Partial<Warehouse>) => {
-    setWarehouses(prev => prev.map(w => w.id === id ? { ...w, ...updates } : w));
+    setWarehouses(prev => prev.map(w => {
+      if (w.id === id) {
+        const updated = { ...w, ...updates };
+        saveWarehouseToFirestore(updated);
+        return updated;
+      }
+      return w;
+    }));
   };
 
   // Forecast actions
@@ -262,45 +340,56 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setForecasts(prev => {
       const index = prev.findIndex(f => f.dcId === dcId && f.productId === productId);
       const safeQty = Math.max(0, Number(qty) || 0);
+      let updatedItem: ForecastItem;
       if (index >= 0) {
         const updated = [...prev];
-        updated[index] = { ...updated[index], forecastQty: safeQty };
+        updatedItem = { ...updated[index], forecastQty: safeQty };
+        updated[index] = updatedItem;
+        saveForecastToFirestore(updatedItem);
         return updated;
       } else {
-        return [
-          ...prev,
-          {
-            id: `fc-${dcId}-${productId}-${Date.now()}`,
-            dcId,
-            productId,
-            forecastQty: safeQty,
-            period: 'Q2-2026 Nasional'
-          }
-        ];
+        updatedItem = {
+          id: `fc-${dcId}-${productId}-${Date.now()}`,
+          dcId,
+          productId,
+          forecastQty: safeQty,
+          period: 'Q2-2026 Nasional'
+        };
+        saveForecastToFirestore(updatedItem);
+        return [...prev, updatedItem];
       }
     });
   };
 
   const batchUpdateForecasts = (items: { dcId: string; productId: string; qty: number }[]) => {
+    const itemsToSave: ForecastItem[] = [];
     setForecasts(prev => {
       const updated = [...prev];
       items.forEach(item => {
         const safeQty = Math.max(0, Number(item.qty) || 0);
         const idx = updated.findIndex(f => f.dcId === item.dcId && f.productId === item.productId);
         if (idx >= 0) {
-          updated[idx] = { ...updated[idx], forecastQty: safeQty };
+          const u = { ...updated[idx], forecastQty: safeQty };
+          updated[idx] = u;
+          itemsToSave.push(u);
         } else {
-          updated.push({
+          const n: ForecastItem = {
             id: `fc-${item.dcId}-${item.productId}-${Date.now()}`,
             dcId: item.dcId,
             productId: item.productId,
             forecastQty: safeQty,
             period: 'Q2-2026 Nasional'
-          });
+          };
+          updated.push(n);
+          itemsToSave.push(n);
         }
       });
       return updated;
     });
+
+    if (itemsToSave.length > 0) {
+      batchSaveForecastsToFirestore(itemsToSave);
+    }
   };
 
   // Inbound Stock
@@ -320,10 +409,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         resulting = prev[index].qty + safeQty;
         const copy = [...prev];
         copy[index] = { ...copy[index], qty: resulting };
+        saveStockToFirestore(copy[index]);
         return copy;
       } else {
         resulting = safeQty;
-        return [...prev, { warehouseId, productId, qty: resulting }];
+        const newItem = { warehouseId, productId, qty: resulting };
+        saveStockToFirestore(newItem);
+        return [...prev, newItem];
       }
     });
 
@@ -343,22 +435,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setMutations(prev => [newMutation, ...prev]);
+    saveMutationToFirestore(newMutation);
   };
 
   // Stock Adjustment
   const adjustStock = (warehouseId: string, productId: string, newQty: number, notes: string) => {
     const current = getStock(warehouseId, productId);
-    const diff = newQty - current;
-    if (diff === 0) return;
+    const targetQty = Math.max(0, Number(newQty) || 0);
+    const diff = targetQty - current;
 
     setStocks(prev => {
       const index = prev.findIndex(s => s.warehouseId === warehouseId && s.productId === productId);
       if (index >= 0) {
         const copy = [...prev];
-        copy[index] = { ...copy[index], qty: Math.max(0, newQty) };
+        copy[index] = { ...copy[index], qty: targetQty };
+        saveStockToFirestore(copy[index]);
         return copy;
       } else {
-        return [...prev, { warehouseId, productId, qty: Math.max(0, newQty) }];
+        const newItem = { warehouseId, productId, qty: targetQty };
+        saveStockToFirestore(newItem);
+        return [...prev, newItem];
       }
     });
 
@@ -372,129 +468,123 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       warehouseId,
       productId,
       qtyChange: diff,
-      resultingQty: Math.max(0, newQty),
+      resultingQty: targetQty,
       referenceNumber: `ADJ-${Date.now().toString().slice(-6)}`,
-      notes: notes || 'Penyesuaian stok opname manual'
+      notes: notes || 'Penyesuaian stok fisik (Opname)'
     };
 
     setMutations(prev => [newMutation, ...prev]);
+    saveMutationToFirestore(newMutation);
   };
 
-  // Shipment Actions: DEDUCTS stock from the chosen warehouse
-  const addShipment = (shipmentData: Omit<Shipment, 'id' | 'createdAt'>): { success: boolean; message?: string } => {
-    const { productId, qty, sourceWarehouseId, soNumber } = shipmentData;
-    const currentStock = getStock(sourceWarehouseId, productId);
-
-    if (currentStock < qty) {
+  // Add Shipment (Sales Order)
+  const addShipment = (
+    data: Omit<Shipment, 'id' | 'createdAt'>
+  ): { success: boolean; message?: string } => {
+    const availableStock = getStock(data.sourceWarehouseId, data.productId);
+    if (availableStock < data.qty) {
+      const prodName = products.find(p => p.id === data.productId)?.name || 'Barang';
+      const whName = warehouses.find(w => w.id === data.sourceWarehouseId)?.name || 'Gudang';
       return {
         success: false,
-        message: `Stok gudang tidak mencukupi! Stok saat ini: ${currentStock.toLocaleString('id-ID')}, Qty kirim yang diinput: ${qty.toLocaleString('id-ID')}. Silakan tambahkan stok penerimaan terlebih dahulu.`
+        message: `Stok ${prodName} di ${whName} tidak mencukupi! Tersedia: ${availableStock.toLocaleString('id-ID')}, Dibutuhkan: ${data.qty.toLocaleString('id-ID')}.`
       };
     }
 
     const newShipment: Shipment = {
-      ...shipmentData,
-      id: `sh-${Date.now()}`,
+      ...data,
+      id: `so-${Date.now()}`,
       createdAt: new Date().toISOString()
     };
 
-    // Deduct warehouse stock
-    const newStockQty = currentStock - qty;
+    // Deduct stock from source warehouse
+    let newBalance = availableStock - data.qty;
     setStocks(prev => {
-      const index = prev.findIndex(s => s.warehouseId === sourceWarehouseId && s.productId === productId);
-      if (index >= 0) {
-        const copy = [...prev];
-        copy[index] = { ...copy[index], qty: newStockQty };
-        return copy;
+      const copy = [...prev];
+      const idx = copy.findIndex(s => s.warehouseId === data.sourceWarehouseId && s.productId === data.productId);
+      if (idx >= 0) {
+        copy[idx] = { ...copy[idx], qty: newBalance };
+        saveStockToFirestore(copy[idx]);
       }
-      return prev;
+      return copy;
     });
 
-    // Add mutation log
+    // Record stock mutation
     const now = new Date();
     const timestampStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    const targetDcObj = dcs.find(d => d.id === shipmentData.targetDcId);
 
-    const mutation: StockMutation = {
+    const dcTarget = dcs.find(d => d.id === data.targetDcId);
+    const newMutation: StockMutation = {
       id: `mut-${Date.now()}`,
       timestamp: timestampStr,
       type: 'OUT_SHIPMENT',
-      warehouseId: sourceWarehouseId,
-      productId,
-      qtyChange: -qty,
-      resultingQty: newStockQty,
-      referenceNumber: soNumber,
-      notes: `Pengiriman ke ${targetDcObj ? targetDcObj.name : 'DC'} (${shipmentData.notes || 'SO Kirim'})`
+      warehouseId: data.sourceWarehouseId,
+      productId: data.productId,
+      qtyChange: -data.qty,
+      resultingQty: newBalance,
+      referenceNumber: data.soNumber,
+      notes: `Pengiriman SO ke ${dcTarget?.name || 'DC'} (${data.status})`
     };
 
-    setMutations(prev => [mutation, ...prev]);
+    setMutations(prev => [newMutation, ...prev]);
     setShipments(prev => [newShipment, ...prev]);
+
+    saveShipmentToFirestore(newShipment);
+    saveMutationToFirestore(newMutation);
 
     return { success: true };
   };
 
   // Update Shipment
-  const updateShipment = (id: string, updatedFields: Partial<Shipment>): { success: boolean; message?: string } => {
+  const updateShipment = (
+    id: string,
+    updates: Partial<Shipment>
+  ): { success: boolean; message?: string } => {
     const existing = shipments.find(s => s.id === id);
     if (!existing) {
       return { success: false, message: 'Surat Jalan tidak ditemukan.' };
     }
 
-    const newWarehouseId = updatedFields.sourceWarehouseId ?? existing.sourceWarehouseId;
-    const newProductId = updatedFields.productId ?? existing.productId;
-    const newQty = updatedFields.qty ?? existing.qty;
+    if (
+      (updates.qty !== undefined && updates.qty !== existing.qty) ||
+      (updates.sourceWarehouseId && updates.sourceWarehouseId !== existing.sourceWarehouseId) ||
+      (updates.productId && updates.productId !== existing.productId)
+    ) {
+      const finalWh = updates.sourceWarehouseId || existing.sourceWarehouseId;
+      const finalProd = updates.productId || existing.productId;
+      const finalQty = updates.qty !== undefined ? updates.qty : existing.qty;
 
-    // Reconcile stock
-    // 1. Revert previous stock deduction
-    const oldWarehouseStock = getStock(existing.sourceWarehouseId, existing.productId);
-    const restoredStock = oldWarehouseStock + existing.qty;
+      const currentAvailable = getStock(finalWh, finalProd);
+      const effectiveStock = (finalWh === existing.sourceWarehouseId && finalProd === existing.productId)
+        ? currentAvailable + existing.qty
+        : currentAvailable;
 
-    // Check if new warehouse has enough
-    let availableTargetStock = (newWarehouseId === existing.sourceWarehouseId && newProductId === existing.productId)
-      ? restoredStock
-      : getStock(newWarehouseId, newProductId);
+      if (effectiveStock < finalQty) {
+        return {
+          success: false,
+          message: `Stok gudang tidak mencukupi untuk perubahan qty baru! Maksimal tersedia: ${effectiveStock.toLocaleString('id-ID')}`
+        };
+      }
 
-    if (availableTargetStock < newQty) {
-      return {
-        success: false,
-        message: `Stok gudang tujuan tidak cukup untuk perubahan ini. Tersedia: ${availableTargetStock.toLocaleString('id-ID')}, Diperlukan: ${newQty.toLocaleString('id-ID')}`
-      };
+      setStocks(prev => {
+        const copy = [...prev];
+        const oldIdx = copy.findIndex(s => s.warehouseId === existing.sourceWarehouseId && s.productId === existing.productId);
+        if (oldIdx >= 0) {
+          copy[oldIdx] = { ...copy[oldIdx], qty: copy[oldIdx].qty + existing.qty };
+          saveStockToFirestore(copy[oldIdx]);
+        }
+        const newIdx = copy.findIndex(s => s.warehouseId === finalWh && s.productId === finalProd);
+        if (newIdx >= 0) {
+          copy[newIdx] = { ...copy[newIdx], qty: copy[newIdx].qty - finalQty };
+          saveStockToFirestore(copy[newIdx]);
+        }
+        return copy;
+      });
     }
 
-    // Apply adjustments
-    setStocks(prev => {
-      let copy = [...prev];
-      // 1. add back old qty
-      const oldIdx = copy.findIndex(s => s.warehouseId === existing.sourceWarehouseId && s.productId === existing.productId);
-      if (oldIdx >= 0) {
-        copy[oldIdx] = { ...copy[oldIdx], qty: copy[oldIdx].qty + existing.qty };
-      }
-
-      // 2. deduct new qty
-      const newIdx = copy.findIndex(s => s.warehouseId === newWarehouseId && s.productId === newProductId);
-      if (newIdx >= 0) {
-        copy[newIdx] = { ...copy[newIdx], qty: copy[newIdx].qty - newQty };
-      }
-      return copy;
-    });
-
-    setShipments(prev => prev.map(s => s.id === id ? { ...s, ...updatedFields } : s));
-
-    // Mutation log
-    const now = new Date();
-    const timestampStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    const mutation: StockMutation = {
-      id: `mut-${Date.now()}`,
-      timestamp: timestampStr,
-      type: 'ADJUSTMENT',
-      warehouseId: newWarehouseId,
-      productId: newProductId,
-      qtyChange: existing.qty - newQty,
-      resultingQty: availableTargetStock - newQty,
-      referenceNumber: updatedFields.soNumber || existing.soNumber,
-      notes: `Revisi Qty Pengiriman SO ${existing.soNumber} (${existing.qty} -> ${newQty})`
-    };
-    setMutations(prev => [mutation, ...prev]);
+    const updatedShipment = { ...existing, ...updates };
+    setShipments(prev => prev.map(s => s.id === id ? updatedShipment : s));
+    saveShipmentToFirestore(updatedShipment);
 
     return { success: true };
   };
@@ -510,6 +600,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const idx = copy.findIndex(s => s.warehouseId === existing.sourceWarehouseId && s.productId === existing.productId);
       if (idx >= 0) {
         copy[idx] = { ...copy[idx], qty: copy[idx].qty + existing.qty };
+        saveStockToFirestore(copy[idx]);
       }
       return copy;
     });
@@ -531,6 +622,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setMutations(prev => [mutation, ...prev]);
     setShipments(prev => prev.filter(s => s.id !== id));
+
+    deleteShipmentFromFirestore(id);
+    saveMutationToFirestore(mutation);
+
     return { success: true };
   };
 
@@ -599,6 +694,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setStocks(INITIAL_WAREHOUSE_STOCKS);
     setShipments(INITIAL_SHIPMENTS);
     setMutations(INITIAL_MUTATIONS);
+
+    // Re-seed cloud
+    seedInitialFirestoreData();
   };
 
   const exportToCSV = (filename: string, rows: Record<string, any>[]) => {
@@ -645,6 +743,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         shipments,
         mutations,
         controllingSummaries,
+        isFirebaseConnected,
         addProduct,
         updateProduct,
         deleteProduct,

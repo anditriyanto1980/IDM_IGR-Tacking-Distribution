@@ -28,7 +28,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenShipmentModal,
   onOpenStockInModal
 }) => {
-  const { shipments, resetToDefaultData } = useApp();
+  const { shipments, resetToDefaultData, isFirebaseConnected } = useApp();
 
   const handleReset = () => {
     if (window.confirm('Reset semua data kembali ke default awal sistem?')) {
@@ -63,6 +63,12 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </h1>
                   <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-white text-blue-700 shadow-xs border border-white">
                     3D Clay
+                  </span>
+                  <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-xs border border-white ${
+                    isFirebaseConnected ? 'bg-white text-emerald-700' : 'bg-white text-amber-700'
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${isFirebaseConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                    {isFirebaseConnected ? 'Firebase Cloud' : 'Connecting Cloud'}
                   </span>
                 </div>
                 <p className="text-xs text-slate-600 font-semibold">

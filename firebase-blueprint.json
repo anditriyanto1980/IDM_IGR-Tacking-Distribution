@@ -1,0 +1,140 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "Master data produk kurma",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "sku": { "type": "string" },
+        "name": { "type": "string" },
+        "unit": { "type": "string" },
+        "packSize": { "type": "string" },
+        "minStockAlert": { "type": "number" },
+        "description": { "type": "string" }
+      },
+      "required": ["id", "sku", "name", "unit"]
+    },
+    "Warehouse": {
+      "title": "Warehouse",
+      "description": "Data master gudang penyimpanan",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string" },
+        "name": { "type": "string" },
+        "location": { "type": "string" },
+        "isMain": { "type": "boolean" }
+      },
+      "required": ["id", "code", "name"]
+    },
+    "DistributionCenter": {
+      "title": "DistributionCenter",
+      "description": "Titik distribusi DC Indomarco dan Indogrosir nasional",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string" },
+        "name": { "type": "string" },
+        "network": { "type": "string", "enum": ["Indomarco", "Indogrosir"] },
+        "region": { "type": "string" },
+        "city": { "type": "string" },
+        "address": { "type": "string" }
+      },
+      "required": ["id", "code", "name", "network", "region"]
+    },
+    "ForecastItem": {
+      "title": "ForecastItem",
+      "description": "Target forecast kuantiti pengiriman per DC dan produk",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "dcId": { "type": "string" },
+        "productId": { "type": "string" },
+        "forecastQty": { "type": "number" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "dcId", "productId", "forecastQty"]
+    },
+    "WarehouseStock": {
+      "title": "WarehouseStock",
+      "description": "Saldo stok fisik per gudang dan barang",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "warehouseId": { "type": "string" },
+        "productId": { "type": "string" },
+        "qty": { "type": "number" },
+        "lastUpdated": { "type": "string" }
+      },
+      "required": ["id", "warehouseId", "productId", "qty"]
+    },
+    "Shipment": {
+      "title": "Shipment",
+      "description": "Surat Jalan / Sales Order pengiriman produk ke DC",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "soNumber": { "type": "string" },
+        "date": { "type": "string" },
+        "productId": { "type": "string" },
+        "qty": { "type": "number" },
+        "sourceWarehouseId": { "type": "string" },
+        "targetDcId": { "type": "string" },
+        "status": { "type": "string", "enum": ["Terkirim", "Dalam Perjalanan", "Dibatalkan"] },
+        "notes": { "type": "string" },
+        "driverName": { "type": "string" },
+        "vehicleNumber": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "soNumber", "date", "productId", "qty", "sourceWarehouseId", "targetDcId", "status"]
+    },
+    "StockMutation": {
+      "title": "StockMutation",
+      "description": "Catatan audit trail mutasi stok keluar atau masuk",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "type": { "type": "string", "enum": ["IN", "OUT", "ADJUSTMENT"] },
+        "warehouseId": { "type": "string" },
+        "productId": { "type": "string" },
+        "qty": { "type": "number" },
+        "balanceAfter": { "type": "number" },
+        "referenceNo": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "required": ["id", "date", "type", "warehouseId", "productId", "qty", "balanceAfter"]
+    }
+  },
+  "firestore": {
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Koleksi data master produk"
+    },
+    "/warehouses/{warehouseId}": {
+      "schema": "Warehouse",
+      "description": "Koleksi master gudang"
+    },
+    "/dcs/{dcId}": {
+      "schema": "DistributionCenter",
+      "description": "Koleksi titik DC Indomarco & Indogrosir"
+    },
+    "/forecasts/{forecastId}": {
+      "schema": "ForecastItem",
+      "description": "Koleksi target forecast alokasi pengiriman"
+    },
+    "/stocks/{stockId}": {
+      "schema": "WarehouseStock",
+      "description": "Koleksi saldo stok fisik per gudang"
+    },
+    "/shipments/{shipmentId}": {
+      "schema": "Shipment",
+      "description": "Koleksi data surat jalan sales order"
+    },
+    "/mutations/{mutationId}": {
+      "schema": "StockMutation",
+      "description": "Koleksi audit riwayat mutasi stok"
+    }
+  }
+}
