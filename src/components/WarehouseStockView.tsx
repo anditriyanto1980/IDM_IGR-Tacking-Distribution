@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { Warehouse } from '../types';
 import { formatNumber } from '../utils/formatters';
+import { WarehouseModal } from './WarehouseModal';
 import { 
   Warehouse as WarehouseIcon, 
   ArrowDownRight, 
@@ -9,7 +11,12 @@ import {
   SlidersHorizontal,
   Plus,
   Check,
-  X
+  X,
+  Edit,
+  Trash2,
+  Building2,
+  Sparkles,
+  AlertCircle
 } from 'lucide-react';
 import { ClayWarehouse } from './ClayIcons';
 
@@ -20,7 +27,7 @@ interface WarehouseStockViewProps {
 export const WarehouseStockView: React.FC<WarehouseStockViewProps> = ({
   onOpenStockInModal
 }) => {
-  const { warehouses, products, stocks, mutations, adjustStock } = useApp();
+  const { warehouses, products, stocks, mutations, adjustStock, deleteWarehouse } = useApp();
 
   const [activeWhId, setActiveWhId] = useState<string>('ALL');
   const [adjustModalOpen, setAdjustModalOpen] = useState(false);
@@ -28,6 +35,29 @@ export const WarehouseStockView: React.FC<WarehouseStockViewProps> = ({
   const [adjustProdId, setAdjustProdId] = useState(products[0]?.id || '');
   const [adjustNewQty, setAdjustNewQty] = useState<number | ''>('');
   const [adjustNotes, setAdjustNotes] = useState('');
+
+  // Warehouse Add & Edit Modal State
+  const [warehouseModalOpen, setWarehouseModalOpen] = useState(false);
+  const [selectedWarehouseForEdit, setSelectedWarehouseForEdit] = useState<Warehouse | null>(null);
+
+  const handleOpenCreateWh = () => {
+    setSelectedWarehouseForEdit(null);
+    setWarehouseModalOpen(true);
+  };
+
+  const handleOpenEditWh = (wh: Warehouse) => {
+    setSelectedWarehouseForEdit(wh);
+    setWarehouseModalOpen(true);
+  };
+
+  const handleDeleteWh = (wh: Warehouse) => {
+    if (window.confirm(`Yakin ingin menghapus data gudang "${wh.name}" (${wh.code})?`)) {
+      const res = deleteWarehouse(wh.id);
+      if (!res.success) {
+        alert(res.message || 'Gagal menghapus gudang.');
+      }
+    }
+  };
 
   // Handle Opname Adjustment
   const handleOpenAdjust = (whId: string, prodId: string) => {
@@ -67,6 +97,15 @@ export const WarehouseStockView: React.FC<WarehouseStockViewProps> = ({
 
         <div className="flex items-center gap-2">
           <button
+            onClick={handleOpenCreateWh}
+            className="clay-btn-apply px-4 py-2 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-md"
+            title="Tambah titik gudang atau pabrik baru"
+          >
+            <Plus className="w-4 h-4" />
+            <span>+ Tambah Gudang Baru</span>
+          </button>
+
+          <button
             onClick={() => onOpenStockInModal()}
             className="clay-btn-emerald px-4 py-2 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-md"
           >
@@ -94,15 +133,35 @@ export const WarehouseStockView: React.FC<WarehouseStockViewProps> = ({
                       <WarehouseIcon className="w-5 h-5 text-blue-600" />
                     </div>
                     <div>
-                      <h2 className="font-bold text-slate-900 text-sm leading-tight">{wh.name}</h2>
+                      <div className="flex items-center gap-1.5">
+                        <h2 className="font-bold text-slate-900 text-sm leading-tight">{wh.name}</h2>
+                        {wh.isMain && (
+                          <span className="text-[10px] uppercase font-bold text-blue-800 bg-white border border-white px-2 py-0.5 rounded-full shadow-xs">
+                            Utama
+                          </span>
+                        )}
+                      </div>
                       <span className="text-[11px] text-slate-500 font-mono font-semibold">{wh.code}</span>
                     </div>
                   </div>
-                  {wh.isMain && (
-                    <span className="text-[10px] uppercase font-bold text-blue-800 bg-white border border-white px-2.5 py-0.5 rounded-full shadow-xs">
-                      Pabrik Utama
-                    </span>
-                  )}
+
+                  {/* Actions: Edit & Delete */}
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleOpenEditWh(wh)}
+                      className="p-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-600 hover:text-blue-600 shadow-xs border border-white/80 transition-all cursor-pointer"
+                      title="Edit Informasi Gudang"
+                    >
+                      <Edit className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteWh(wh)}
+                      className="p-1.5 rounded-xl bg-white hover:bg-red-50 text-slate-400 hover:text-red-600 shadow-xs border border-white/80 transition-all cursor-pointer"
+                      title="Hapus Gudang"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
 
                 <p className="text-xs text-slate-600 font-medium mt-2">{wh.location}</p>
@@ -382,6 +441,13 @@ export const WarehouseStockView: React.FC<WarehouseStockViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Warehouse Create / Edit Modal */}
+      <WarehouseModal
+        isOpen={warehouseModalOpen}
+        onClose={() => setWarehouseModalOpen(false)}
+        editWarehouse={selectedWarehouseForEdit}
+      />
     </div>
   );
 };

@@ -25,6 +25,7 @@ import {
   saveProductToFirestore,
   deleteProductFromFirestore,
   saveWarehouseToFirestore,
+  deleteWarehouseFromFirestore,
   saveDistributionCenterToFirestore,
   deleteDistributionCenterFromFirestore,
   saveForecastToFirestore,
@@ -54,6 +55,7 @@ interface AppContextType {
   // Warehouse actions
   addWarehouse: (warehouse: Omit<Warehouse, 'id'>) => Warehouse;
   updateWarehouse: (id: string, updates: Partial<Warehouse>) => void;
+  deleteWarehouse: (id: string) => { success: boolean; message?: string };
 
   // DC actions
   addDC: (dc: Omit<DistributionCenter, 'id'>, initialForecasts?: Record<string, number>) => { success: boolean; message?: string; dc?: DistributionCenter };
@@ -310,7 +312,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...whData,
       id: `wh-${Date.now()}`
     };
-    setWarehouses(prev => [...prev, newWh]);
+
+    setWarehouses(prev => {
+      // If new warehouse is marked as main, demote others
+      if (whData.isMain) {
+        return [...prev.map(w => ({ ...w, isMain: false })), newWh];
+      }
+      return [...prev, newWh];
+    });
+
     saveWarehouseToFirestore(newWh);
 
     // initialize 0 stocks for all products
@@ -338,8 +348,58 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         saveWarehouseToFirestore(updated);
         return updated;
       }
+      // If this warehouse is being made main, demote others
+      if (updates.isMain) {
+        const demoted = { ...w, isMain: false };
+        saveWarehouseToFirestore(demoted);
+        return demoted;
+      }
       return w;
     }));
+  };
+
+  const deleteWarehouse = (id: string): { success: boolean; message?: string } => {
+    if (warehouses.length <= 1) {
+      return {
+        success: false,
+        message: 'Minimal harus ada 1 gudang aktif dalam sistem. Tidak dapat menghapus gudang terakhir.'
+      };
+    }
+
+    const hasStock = stocks
+      .filter(s => s.warehouseId === id)
+      .reduce((sum, s) => sum + s.qty, 0);
+
+    if (hasStock > 0) {
+      return {
+        success: false,
+        message: `Gudang ini masih memiliki ${hasStock} karton stok barang. Silakan kosongkan stok atau mutasi terlebih dahulu sebelum menghapus.`
+      };
+    }
+
+    const hasShipment = shipments.some(sh => sh.sourceWarehouseId === id);
+    if (hasShipment) {
+      return {
+        success: false,
+        message: 'Gudang ini tercatat dalam riwayat Surat Jalan / Pengiriman yang sudah ada.'
+      };
+    }
+
+    setWarehouses(prev => {
+      const remaining = prev.filter(w => w.id !== id);
+      // Ensure at least one is main if deleted was main
+      const wasMain = prev.find(w => w.id === id)?.isMain;
+      if (wasMain && remaining.length > 0) {
+        remaining[0] = { ...remaining[0], isMain: true };
+        saveWarehouseToFirestore(remaining[0]);
+      }
+      return remaining;
+    });
+
+    setStocks(prev => prev.filter(s => s.warehouseId !== id));
+    deleteWarehouseFromFirestore(id);
+
+    return { success: true };
   };
 
   // Distribution Center actions
@@ -849,6 +909,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteProduct,
         addWarehouse,
         updateWarehouse,
+        deleteWarehouse,
         addDC,
         updateDC,
         deleteDC,

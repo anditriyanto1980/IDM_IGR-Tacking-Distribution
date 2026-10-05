@@ -198,6 +198,14 @@ export async function saveWarehouseToFirestore(wh: Warehouse) {
   }
 }
 
+export async function deleteWarehouseFromFirestore(warehouseId: string) {
+  try {
+    await deleteDoc(doc(db, COLLECTIONS.WAREHOUSES, warehouseId));
+  } catch (e) {
+    console.warn('deleteWarehouseFromFirestore error:', e);
+  }
+}
+
 // Distribution Center cloud actions
 export async function saveDistributionCenterToFirestore(dc: DistributionCenter) {
   try {
