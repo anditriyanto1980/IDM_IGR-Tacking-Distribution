@@ -88,8 +88,8 @@ function MainLayout() {
         onOpenStockInModal={() => handleOpenStockIn()}
       />
 
-      {/* Main Content Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 pt-4 pb-8">
+      {/* Main Content Container - Full Width edge-to-edge */}
+      <main className="flex-1 w-full px-3 sm:px-6 lg:px-8 pt-4 pb-8">
         {activeTab === 'dashboard' && (
           <DashboardView
             setActiveTab={setActiveTab}
@@ -136,7 +136,7 @@ function MainLayout() {
 
       {/* Global Footer */}
       <footer className="bg-blue-950/50 backdrop-blur-xs border-t border-white/10 py-4 text-center text-xs text-blue-200">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+        <div className="w-full px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2">
           <span className="font-semibold text-white">LogiTrack DC · 3D Claymorphic Logistics Platform</span>
           <span className="text-[11px] text-blue-300">
             Distribusi Nasional DC Indomarco & Indogrosir · Kurma Akram & DC

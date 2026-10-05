@@ -48,8 +48,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   ];
 
   return (
-    <header className="sticky top-0 z-40 px-3 sm:px-6 pt-3 pb-2 select-none">
-      <div className="max-w-7xl mx-auto clay-shell p-4 sm:p-5 text-slate-900">
+    <header className="sticky top-0 z-40 px-3 sm:px-6 lg:px-8 pt-3 pb-2 select-none">
+      <div className="w-full clay-shell p-4 sm:p-5 text-slate-900">
         {/* Top bar: Brand + Pill Actions (matching the "Multiselect" & "Select all" header style) */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
           {/* Brand & Title */}
