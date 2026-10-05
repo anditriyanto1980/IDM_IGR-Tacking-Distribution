@@ -1,6 +1,6 @@
 export type DCNetwork = 'Indomarco' | 'Indogrosir';
 
-export type Region = 
+export type StandardRegion = 
   | 'Jabodetabek'
   | 'Jawa Barat'
   | 'Jawa Tengah & DIY'
@@ -8,7 +8,10 @@ export type Region =
   | 'Sumatera'
   | 'Bali & Nusa Tenggara'
   | 'Sulawesi'
-  | 'Kalimantan';
+  | 'Kalimantan'
+  | 'Maluku & Papua';
+
+export type Region = StandardRegion | (string & {});
 
 export interface Product {
   id: string;

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { formatNumber } from '../utils/formatters';
 import { ForecastInputModal } from './ForecastInputModal';
+import { DCModal } from './DCModal';
 import { 
   Target, 
   Search, 
@@ -27,6 +28,7 @@ export const ForecastManagerView: React.FC = () => {
   // Single DC Modal
   const [inputModalOpen, setInputModalOpen] = useState(false);
   const [selectedDcForModal, setSelectedDcForModal] = useState<string | undefined>(undefined);
+  const [dcModalOpen, setDcModalOpen] = useState(false);
 
   // Bulk Edit Mode
   const [isBulkEditMode, setIsBulkEditMode] = useState(false);
@@ -220,11 +222,20 @@ export const ForecastManagerView: React.FC = () => {
           </button>
 
           <button
-            onClick={() => handleOpenDcModal()}
+            onClick={() => setDcModalOpen(true)}
             className="clay-btn-apply px-4 py-2 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-md"
+            title="Tambah titik DC dan wilayah baru ke sistem"
           >
             <Plus className="w-4 h-4" />
-            <span>+ Input Forecast per DC</span>
+            <span>+ Tambah DC & Wilayah</span>
+          </button>
+
+          <button
+            onClick={() => handleOpenDcModal()}
+            className="clay-btn-white px-4 py-2 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm text-slate-800"
+          >
+            <Edit3 className="w-4 h-4 text-blue-600" />
+            <span>Input Forecast per DC</span>
           </button>
         </div>
       </div>
@@ -549,6 +560,12 @@ export const ForecastManagerView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Modal Add DC */}
+      <DCModal
+        isOpen={dcModalOpen}
+        onClose={() => setDcModalOpen(false)}
+      />
     </div>
   );
 };

@@ -198,6 +198,23 @@ export async function saveWarehouseToFirestore(wh: Warehouse) {
   }
 }
 
+// Distribution Center cloud actions
+export async function saveDistributionCenterToFirestore(dc: DistributionCenter) {
+  try {
+    await setDoc(doc(db, COLLECTIONS.DCS, dc.id), dc);
+  } catch (e) {
+    console.warn('saveDistributionCenterToFirestore error:', e);
+  }
+}
+
+export async function deleteDistributionCenterFromFirestore(dcId: string) {
+  try {
+    await deleteDoc(doc(db, COLLECTIONS.DCS, dcId));
+  } catch (e) {
+    console.warn('deleteDistributionCenterFromFirestore error:', e);
+  }
+}
+
 // Forecast cloud actions
 export async function saveForecastToFirestore(item: ForecastItem) {
   try {

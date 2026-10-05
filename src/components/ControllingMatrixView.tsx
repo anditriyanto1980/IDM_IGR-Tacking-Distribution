@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { formatNumber, formatPercent } from '../utils/formatters';
 import { DCControllingSummary } from '../types';
+import { DCModal } from './DCModal';
 import { 
   Search, 
   Download, 
@@ -11,6 +12,7 @@ import {
   Clock, 
   AlertCircle,
   Truck,
+  Building2,
   RotateCcw
 } from 'lucide-react';
 
@@ -25,6 +27,7 @@ export const ControllingMatrixView: React.FC<ControllingMatrixViewProps> = ({
 }) => {
   const { controllingSummaries, products, dcs, exportToCSV } = useApp();
 
+  const [dcModalOpen, setDcModalOpen] = useState(false);
   const [networkFilter, setNetworkFilter] = useState<'ALL' | 'Indomarco' | 'Indogrosir'>('ALL');
   const [regionFilter, setRegionFilter] = useState<string>('ALL');
   const [productFilter, setProductFilter] = useState<string>(initialProductId || 'ALL');
@@ -131,6 +134,15 @@ export const ControllingMatrixView: React.FC<ControllingMatrixViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setDcModalOpen(true)}
+            className="clay-btn-apply px-4 py-2 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-md"
+            title="Tambah titik DC baru ke sistem"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>+ Tambah DC & Wilayah</span>
+          </button>
+
           <button
             onClick={handleExport}
             className="clay-btn-white px-4 py-2 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm"
@@ -426,6 +438,12 @@ export const ControllingMatrixView: React.FC<ControllingMatrixViewProps> = ({
           </table>
         </div>
       </div>
+
+      {/* Modal Add DC */}
+      <DCModal
+        isOpen={dcModalOpen}
+        onClose={() => setDcModalOpen(false)}
+      />
     </div>
   );
 };

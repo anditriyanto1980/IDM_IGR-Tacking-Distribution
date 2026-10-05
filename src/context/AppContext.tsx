@@ -25,6 +25,8 @@ import {
   saveProductToFirestore,
   deleteProductFromFirestore,
   saveWarehouseToFirestore,
+  saveDistributionCenterToFirestore,
+  deleteDistributionCenterFromFirestore,
   saveForecastToFirestore,
   batchSaveForecastsToFirestore,
   saveStockToFirestore,
@@ -52,6 +54,11 @@ interface AppContextType {
   // Warehouse actions
   addWarehouse: (warehouse: Omit<Warehouse, 'id'>) => Warehouse;
   updateWarehouse: (id: string, updates: Partial<Warehouse>) => void;
+
+  // DC actions
+  addDC: (dc: Omit<DistributionCenter, 'id'>, initialForecasts?: Record<string, number>) => { success: boolean; message?: string; dc?: DistributionCenter };
+  updateDC: (id: string, updates: Partial<DistributionCenter>) => { success: boolean; message?: string };
+  deleteDC: (id: string) => { success: boolean; message?: string };
 
   // Forecast actions
   updateForecast: (dcId: string, productId: string, qty: number) => void;
@@ -333,6 +340,99 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return w;
     }));
+  };
+
+  // Distribution Center actions
+  const addDC = (
+    data: Omit<DistributionCenter, 'id'>,
+    initialForecasts?: Record<string, number>
+  ): { success: boolean; message?: string; dc?: DistributionCenter } => {
+    const cleanCode = data.code.trim().toUpperCase();
+    const cleanName = data.name.trim();
+    if (!cleanCode || !cleanName) {
+      return { success: false, message: 'Kode DC dan Nama DC wajib diisi!' };
+    }
+
+    if (dcs.some(d => d.code.toLowerCase() === cleanCode.toLowerCase())) {
+      return { success: false, message: `Kode DC "${cleanCode}" sudah digunakan!` };
+    }
+
+    const newDC: DistributionCenter = {
+      ...data,
+      id: `dc-${Date.now()}`,
+      code: cleanCode,
+      name: cleanName,
+      city: data.city.trim(),
+      region: data.region.trim(),
+      address: data.address?.trim() || ''
+    };
+
+    setDcs(prev => [...prev, newDC]);
+    saveDistributionCenterToFirestore(newDC);
+
+    // Initialize forecast items for all existing products for this new DC
+    const newForecasts: ForecastItem[] = products.map(prod => {
+      const customQty = initialForecasts ? Number(initialForecasts[prod.id]) || 0 : 0;
+      return {
+        id: `fc-${newDC.id}-${prod.id}`,
+        dcId: newDC.id,
+        productId: prod.id,
+        forecastQty: Math.max(0, customQty),
+        period: 'Q2-2026 Nasional'
+      };
+    });
+
+    setForecasts(prev => [...prev, ...newForecasts]);
+    batchSaveForecastsToFirestore(newForecasts);
+
+    return { success: true, dc: newDC };
+  };
+
+  const updateDC = (id: string, updates: Partial<DistributionCenter>): { success: boolean; message?: string } => {
+    const existing = dcs.find(d => d.id === id);
+    if (!existing) return { success: false, message: 'DC tidak ditemukan.' };
+
+    if (updates.code) {
+      const cleanCode = updates.code.trim().toUpperCase();
+      if (dcs.some(d => d.id !== id && d.code.toLowerCase() === cleanCode.toLowerCase())) {
+        return { success: false, message: `Kode DC "${cleanCode}" sudah digunakan oleh DC lain!` };
+      }
+    }
+
+    const updated: DistributionCenter = {
+      ...existing,
+      ...updates,
+      code: updates.code ? updates.code.trim().toUpperCase() : existing.code,
+      name: updates.name ? updates.name.trim() : existing.name,
+      region: updates.region ? updates.region.trim() : existing.region,
+      city: updates.city ? updates.city.trim() : existing.city,
+    };
+
+    setDcs(prev => prev.map(d => d.id === id ? updated : d));
+    saveDistributionCenterToFirestore(updated);
+
+    return { success: true };
+  };
+
+  const deleteDC = (id: string): { success: boolean; message?: string } => {
+    const hasShipments = shipments.some(s => s.targetDcId === id);
+    if (hasShipments) {
+      return {
+        success: false,
+        message: 'Tidak dapat menghapus DC ini karena sudah memiliki riwayat Surat Jalan / Pengiriman.'
+      };
+    }
+
+    const target = dcs.find(d => d.id === id);
+    if (!target) return { success: false, message: 'DC tidak ditemukan.' };
+
+    setDcs(prev => prev.filter(d => d.id !== id));
+    deleteDistributionCenterFromFirestore(id);
+
+    // Clean up forecasts for this DC
+    setForecasts(prev => prev.filter(f => f.dcId !== id));
+
+    return { success: true };
   };
 
   // Forecast actions
@@ -749,6 +849,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteProduct,
         addWarehouse,
         updateWarehouse,
+        addDC,
+        updateDC,
+        deleteDC,
         updateForecast,
         batchUpdateForecasts,
         getStock,

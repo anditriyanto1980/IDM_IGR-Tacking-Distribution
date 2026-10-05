@@ -7,13 +7,14 @@ import {
   Warehouse as WarehouseIcon, 
   Package, 
   Target, 
+  Building2,
   Plus, 
   ArrowDownRight, 
   RotateCcw
 } from 'lucide-react';
 import { ClayTruck } from './ClayIcons';
 
-export type ActiveTab = 'dashboard' | 'matrix' | 'shipments' | 'stock' | 'products' | 'forecast';
+export type ActiveTab = 'dashboard' | 'matrix' | 'shipments' | 'stock' | 'products' | 'forecast' | 'dcs';
 
 interface NavbarProps {
   activeTab: ActiveTab;
@@ -42,6 +43,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: 'shipments' as ActiveTab, label: 'Riwayat SO', icon: Truck, badge: shipments.length },
     { id: 'stock' as ActiveTab, label: 'Stok Gudang', icon: WarehouseIcon },
     { id: 'products' as ActiveTab, label: 'Master Barang', icon: Package },
+    { id: 'dcs' as ActiveTab, label: 'Master DC & Wilayah', icon: Building2 },
     { id: 'forecast' as ActiveTab, label: 'Target Forecast', icon: Target },
   ];
 

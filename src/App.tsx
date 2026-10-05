@@ -11,6 +11,7 @@ import { ControllingMatrixView } from './components/ControllingMatrixView';
 import { ShipmentListView } from './components/ShipmentListView';
 import { WarehouseStockView } from './components/WarehouseStockView';
 import { ProductMasterView } from './components/ProductMasterView';
+import { DCMasterView } from './components/DCMasterView';
 import { ForecastManagerView } from './components/ForecastManagerView';
 import { ShipmentModal } from './components/ShipmentModal';
 import { StockInModal } from './components/StockInModal';
@@ -120,6 +121,12 @@ function MainLayout() {
 
         {activeTab === 'products' && (
           <ProductMasterView />
+        )}
+
+        {activeTab === 'dcs' && (
+          <DCMasterView 
+            onOpenShipmentForDC={(dcId) => handleOpenShipmentForDC(dcId, '')}
+          />
         )}
 
         {activeTab === 'forecast' && (
