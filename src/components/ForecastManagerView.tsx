@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { formatNumber } from '../utils/formatters';
 import { ForecastInputModal } from './ForecastInputModal';
@@ -15,7 +15,11 @@ import {
   HelpCircle, 
   CheckCircle2,
   Building2,
-  X
+  X,
+  RotateCcw,
+  Filter,
+  ArrowUpDown,
+  Globe
 } from 'lucide-react';
 
 export const ForecastManagerView: React.FC = () => {
@@ -23,7 +27,14 @@ export const ForecastManagerView: React.FC = () => {
 
   const [networkFilter, setNetworkFilter] = useState<'ALL' | 'Indomarco' | 'Indogrosir'>('ALL');
   const [regionFilter, setRegionFilter] = useState<string>('ALL');
+  const [allocationFilter, setAllocationFilter] = useState<'ALL' | 'HAS_TARGET' | 'NO_TARGET'>('ALL');
+  const [productFilter, setProductFilter] = useState<string>('ALL');
+  const [qtyRangeFilter, setQtyRangeFilter] = useState<'ALL' | 'TIER_HIGH' | 'TIER_MED' | 'TIER_LOW' | 'TIER_ZERO'>('ALL');
+  const [sortBy, setSortBy] = useState<'NAME_ASC' | 'CODE_ASC' | 'REGION_TARGET_DESC' | 'REGION_TARGET_ASC' | 'TARGET_DESC' | 'TARGET_ASC'>('NAME_ASC');
   const [search, setSearch] = useState('');
+
+  // Regional ranking sort order
+  const [regionRankingOrder, setRegionRankingOrder] = useState<'DESC' | 'ASC'>('DESC');
   
   // Single DC Modal
   const [inputModalOpen, setInputModalOpen] = useState(false);
@@ -40,17 +51,29 @@ export const ForecastManagerView: React.FC = () => {
   const [massRegion, setMassRegion] = useState<string>('Jabodetabek');
   const [massQtys, setMassQtys] = useState<Record<string, number>>({});
 
-  const regions = Array.from(new Set(dcs.map(d => d.region)));
+  const regions = useMemo(() => Array.from(new Set(dcs.map(d => d.region))).sort(), [dcs]);
 
-  const filteredDcs = dcs.filter(dc => {
-    if (networkFilter !== 'ALL' && dc.network !== networkFilter) return false;
-    if (regionFilter !== 'ALL' && dc.region !== regionFilter) return false;
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      return dc.name.toLowerCase().includes(q) || dc.city.toLowerCase().includes(q) || dc.region.toLowerCase().includes(q);
-    }
-    return true;
-  });
+  const isFilterActive = useMemo(() => {
+    return Boolean(
+      search.trim() ||
+      networkFilter !== 'ALL' ||
+      regionFilter !== 'ALL' ||
+      allocationFilter !== 'ALL' ||
+      productFilter !== 'ALL' ||
+      qtyRangeFilter !== 'ALL' ||
+      sortBy !== 'NAME_ASC'
+    );
+  }, [search, networkFilter, regionFilter, allocationFilter, productFilter, qtyRangeFilter, sortBy]);
+
+  const handleResetFilters = () => {
+    setSearch('');
+    setNetworkFilter('ALL');
+    setRegionFilter('ALL');
+    setAllocationFilter('ALL');
+    setProductFilter('ALL');
+    setQtyRangeFilter('ALL');
+    setSortBy('NAME_ASC');
+  };
 
   const getForecastValue = (dcId: string, productId: string): number => {
     if (isBulkEditMode) {
@@ -60,6 +83,93 @@ export const ForecastManagerView: React.FC = () => {
     const item = forecasts.find(f => f.dcId === dcId && f.productId === productId);
     return item ? item.forecastQty : 0;
   };
+
+  // Region forecast totals map for region-level ranking and sorting
+  const regionTotalsMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    dcs.forEach(dc => {
+      let dcTotal = 0;
+      products.forEach(p => {
+        dcTotal += getForecastValue(dc.id, p.id);
+      });
+      map[dc.region] = (map[dc.region] || 0) + dcTotal;
+    });
+    return map;
+  }, [dcs, products, forecasts, bulkValues, isBulkEditMode]);
+
+  // Regional ranking list (Sorted by forecast qty)
+  const regionalRankingList = useMemo(() => {
+    const arr = regions.map(reg => ({
+      region: reg,
+      totalForecast: regionTotalsMap[reg] || 0,
+      dcCount: dcs.filter(d => d.region === reg).length
+    }));
+    if (regionRankingOrder === 'DESC') {
+      arr.sort((a, b) => b.totalForecast - a.totalForecast);
+    } else {
+      arr.sort((a, b) => a.totalForecast - b.totalForecast);
+    }
+    return arr;
+  }, [regions, regionTotalsMap, dcs, regionRankingOrder]);
+
+  const filteredDcs = useMemo(() => {
+    return dcs
+      .map(dc => {
+        let dcTotal = 0;
+        products.forEach(p => {
+          dcTotal += getForecastValue(dc.id, p.id);
+        });
+        return { dc, dcTotal };
+      })
+      .filter(({ dc, dcTotal }) => {
+        if (networkFilter !== 'ALL' && dc.network !== networkFilter) return false;
+        if (regionFilter !== 'ALL' && dc.region !== regionFilter) return false;
+
+        if (allocationFilter === 'HAS_TARGET' && dcTotal <= 0) return false;
+        if (allocationFilter === 'NO_TARGET' && dcTotal > 0) return false;
+
+        // Qty Range Filter
+        if (qtyRangeFilter !== 'ALL') {
+          if (qtyRangeFilter === 'TIER_HIGH' && dcTotal < 10000) return false;
+          if (qtyRangeFilter === 'TIER_MED' && (dcTotal < 3000 || dcTotal >= 10000)) return false;
+          if (qtyRangeFilter === 'TIER_LOW' && (dcTotal <= 0 || dcTotal >= 3000)) return false;
+          if (qtyRangeFilter === 'TIER_ZERO' && dcTotal > 0) return false;
+        }
+
+        if (productFilter !== 'ALL') {
+          const pVal = getForecastValue(dc.id, productFilter);
+          if (pVal <= 0) return false;
+        }
+
+        if (search.trim()) {
+          const q = search.toLowerCase();
+          const match =
+            dc.name.toLowerCase().includes(q) ||
+            dc.code.toLowerCase().includes(q) ||
+            dc.city.toLowerCase().includes(q) ||
+            dc.region.toLowerCase().includes(q);
+          if (!match) return false;
+        }
+
+        return true;
+      })
+      .sort((a, b) => {
+        if (sortBy === 'REGION_TARGET_DESC') {
+          const regDiff = (regionTotalsMap[b.dc.region] || 0) - (regionTotalsMap[a.dc.region] || 0);
+          return regDiff !== 0 ? regDiff : b.dcTotal - a.dcTotal;
+        }
+        if (sortBy === 'REGION_TARGET_ASC') {
+          const regDiff = (regionTotalsMap[a.dc.region] || 0) - (regionTotalsMap[b.dc.region] || 0);
+          return regDiff !== 0 ? regDiff : a.dcTotal - b.dcTotal;
+        }
+        if (sortBy === 'NAME_ASC') return a.dc.name.localeCompare(b.dc.name);
+        if (sortBy === 'CODE_ASC') return a.dc.code.localeCompare(b.dc.code);
+        if (sortBy === 'TARGET_DESC') return b.dcTotal - a.dcTotal;
+        if (sortBy === 'TARGET_ASC') return a.dcTotal - b.dcTotal;
+        return 0;
+      })
+      .map(item => item.dc);
+  }, [dcs, products, forecasts, bulkValues, isBulkEditMode, networkFilter, regionFilter, allocationFilter, productFilter, qtyRangeFilter, sortBy, search, regionTotalsMap]);
 
   // Turn on bulk edit mode
   const handleToggleBulkEdit = () => {
@@ -287,48 +397,220 @@ export const ForecastManagerView: React.FC = () => {
         </div>
       )}
 
-      {/* Toolbar: Search & Filters (Pill Inputs) */}
-      <div className="clay-glass-card p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="relative clay-search-pill flex items-center px-3.5 py-1.5 flex-1 w-full max-w-md">
-          <Search className="w-4 h-4 text-slate-400 shrink-0 mr-2" />
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Cari DC, kota, atau wilayah..."
-            className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none"
-          />
-        </div>
+      {/* Toolbar: Search & Filters (Multi-Criteria Pill Grid) */}
+      <div className="clay-glass-card p-4 sm:p-5 space-y-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {/* Search Input */}
+          <div className="relative clay-search-pill flex items-center px-3.5 py-1.5">
+            <Search className="w-4 h-4 text-slate-400 shrink-0 mr-2" />
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Cari nama DC, kode, kota, atau wilayah..."
+              className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none"
+            />
+          </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
+          {/* Network Filter */}
           <div className="clay-search-pill px-3 py-1.5">
             <select
               value={networkFilter}
               onChange={e => setNetworkFilter(e.target.value as any)}
-              className="text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+              className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
             >
-              <option value="ALL">Semua Jaringan</option>
+              <option value="ALL">Semua Jaringan DC ({dcs.length})</option>
               <option value="Indomarco">DC Indomarco</option>
               <option value="Indogrosir">DC Indogrosir</option>
             </select>
           </div>
 
+          {/* Region Filter */}
           <div className="clay-search-pill px-3 py-1.5">
             <select
               value={regionFilter}
               onChange={e => setRegionFilter(e.target.value)}
-              className="text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+              className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
             >
-              <option value="ALL">Semua Wilayah</option>
+              <option value="ALL">Semua Wilayah ({regions.length} Zona)</option>
               {regions.map(r => (
                 <option key={r} value={r}>{r}</option>
               ))}
             </select>
           </div>
+        </div>
 
-          <div className="text-xs font-bold text-slate-900 bg-white px-3.5 py-1.5 rounded-full shadow-xs border border-white whitespace-nowrap">
-            Total Nasional: <span className="text-blue-700">{formatNumber(totalForecastAll)}</span> ctn
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          {/* Allocation Status Filter */}
+          <div className="clay-search-pill px-3 py-1.5">
+            <select
+              value={allocationFilter}
+              onChange={e => setAllocationFilter(e.target.value as any)}
+              className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+            >
+              <option value="ALL">Semua Status Alokasi Target</option>
+              <option value="HAS_TARGET">Sudah Ada Target Alokasi (&gt; 0 Ctn)</option>
+              <option value="NO_TARGET">Belum Dialokasikan (0 Ctn)</option>
+            </select>
           </div>
+
+          {/* Product Filter */}
+          <div className="clay-search-pill px-3 py-1.5">
+            <select
+              value={productFilter}
+              onChange={e => setProductFilter(e.target.value)}
+              className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+            >
+              <option value="ALL">Semua Produk Kurma</option>
+              {products.map(p => (
+                <option key={p.id} value={p.id}>Hanya DC dgn Target: {p.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Filter Rentang Qty Target */}
+          <div className="clay-search-pill px-3 py-1.5">
+            <select
+              value={qtyRangeFilter}
+              onChange={e => setQtyRangeFilter(e.target.value as any)}
+              className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+            >
+              <option value="ALL">Semua Kuantiti Target</option>
+              <option value="TIER_HIGH">🔥 Target Besar (&ge; 10.000 ctn)</option>
+              <option value="TIER_MED">⚡ Target Sedang (3.000 - 9.999 ctn)</option>
+              <option value="TIER_LOW">📦 Target Kecil (1 - 2.999 ctn)</option>
+              <option value="TIER_ZERO">Belum Ada Target (0 ctn)</option>
+            </select>
+          </div>
+
+          {/* Sort Selector */}
+          <div className="clay-search-pill px-3 py-1.5">
+            <select
+              value={sortBy}
+              onChange={e => setSortBy(e.target.value as any)}
+              className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+            >
+              <option value="REGION_TARGET_DESC">🗺️ Wilayah: Target Terbanyak &rarr; Terkecil</option>
+              <option value="REGION_TARGET_ASC">🗺️ Wilayah: Target Terkecil &rarr; Terbanyak</option>
+              <option value="TARGET_DESC">🎯 Target DC Terbanyak</option>
+              <option value="TARGET_ASC">🎯 Target DC Tersedikit</option>
+              <option value="NAME_ASC">🏢 Nama DC (A - Z)</option>
+              <option value="CODE_ASC">🔢 Kode DC</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Interactive Regional Forecast Ranking Rail */}
+        <div className="pt-2 border-t border-white/60 space-y-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 text-xs font-black text-slate-800">
+              <Globe className="w-3.5 h-3.5 text-blue-600" />
+              <span>Peringkat Target Forecast per Wilayah:</span>
+            </div>
+            <div className="flex items-center gap-1.5 self-start sm:self-auto">
+              <span className="text-[11px] font-bold text-slate-500">Urutkan:</span>
+              <div className="inline-flex p-0.5 bg-slate-100 rounded-lg border border-slate-200">
+                <button
+                  onClick={() => {
+                    setRegionRankingOrder('DESC');
+                    setSortBy('REGION_TARGET_DESC');
+                  }}
+                  className={`px-2.5 py-0.5 text-[11px] font-extrabold rounded-md transition-all cursor-pointer ${
+                    regionRankingOrder === 'DESC'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="Urutkan dari wilayah target terbanyak ke terkecil"
+                >
+                  Terbanyak &rarr; Terkecil ↓
+                </button>
+                <button
+                  onClick={() => {
+                    setRegionRankingOrder('ASC');
+                    setSortBy('REGION_TARGET_ASC');
+                  }}
+                  className={`px-2.5 py-0.5 text-[11px] font-extrabold rounded-md transition-all cursor-pointer ${
+                    regionRankingOrder === 'ASC'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="Urutkan dari wilayah target terkecil ke terbanyak"
+                >
+                  Terkecil &rarr; Terbanyak ↑
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-0.5 scrollbar-thin">
+            <button
+              onClick={() => setRegionFilter('ALL')}
+              className={`px-3 py-1 rounded-xl text-xs font-black transition-all shrink-0 cursor-pointer ${
+                regionFilter === 'ALL'
+                  ? 'bg-blue-700 text-white shadow-xs'
+                  : 'clay-chip-white text-slate-700 hover:bg-blue-50 border border-white'
+              }`}
+            >
+              Semua Wilayah ({formatNumber(totalForecastAll)} ctn)
+            </button>
+            {regionalRankingList.map((r, rankIdx) => {
+              const isSelected = regionFilter === r.region;
+              return (
+                <button
+                  key={r.region}
+                  onClick={() => setRegionFilter(isSelected ? 'ALL' : r.region)}
+                  className={`px-3 py-1 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-2 cursor-pointer ${
+                    isSelected
+                      ? 'bg-blue-700 text-white shadow-xs'
+                      : 'clay-chip-white text-slate-800 hover:bg-blue-50 border border-white'
+                  }`}
+                  title={`Filter hanya DC di wilayah ${r.region} (${formatNumber(r.totalForecast)} ctn)`}
+                >
+                  <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black ${
+                    isSelected ? 'bg-white text-blue-800' : 'bg-blue-100 text-blue-800'
+                  }`}>
+                    #{rankIdx + 1}
+                  </span>
+                  <span>{r.region}</span>
+                  <span className={`text-[11px] font-black px-1.5 py-0.2 rounded-md ${
+                    isSelected ? 'bg-blue-800 text-blue-100' : 'bg-slate-100 text-slate-800'
+                  }`}>
+                    {formatNumber(r.totalForecast)} ctn
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Filter Summary & Quick Reset */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-white/60 text-xs">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-slate-600 font-semibold">
+              Menampilkan <strong>{filteredDcs.length}</strong> dari <strong>{dcs.length}</strong> DC
+            </span>
+            <span className="text-slate-300">|</span>
+            <span className="text-blue-800 font-bold">
+              Total Target Terfilter: {formatNumber(filteredDcs.reduce((grand, dc) => {
+                return grand + products.reduce((pSum, p) => pSum + getForecastValue(dc.id, p.id), 0);
+              }, 0))} ctn
+            </span>
+            {isFilterActive && (
+              <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-bold">
+                Filter Aktif
+              </span>
+            )}
+          </div>
+
+          {isFilterActive && (
+            <button
+              onClick={handleResetFilters}
+              className="clay-btn-white px-3 py-1 text-xs text-blue-700 hover:text-blue-900 font-bold flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset Filter</span>
+            </button>
+          )}
         </div>
       </div>
 

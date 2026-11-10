@@ -10,7 +10,8 @@ import {
   Building2,
   Plus, 
   ArrowDownRight, 
-  RotateCcw
+  RotateCcw,
+  FileSpreadsheet
 } from 'lucide-react';
 import { ClayTruck } from './ClayIcons';
 
@@ -21,13 +22,15 @@ interface NavbarProps {
   setActiveTab: (tab: ActiveTab) => void;
   onOpenShipmentModal: () => void;
   onOpenStockInModal: () => void;
+  onOpenExportModal?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
   setActiveTab,
   onOpenShipmentModal,
-  onOpenStockInModal
+  onOpenStockInModal,
+  onOpenExportModal
 }) => {
   const { shipments, resetToDefaultData, isFirebaseConnected } = useApp();
 
@@ -108,6 +111,18 @@ export const Navbar: React.FC<NavbarProps> = ({
               <Plus className="w-4 h-4" />
               <span>+ Input SO Baru</span>
             </button>
+
+            {onOpenExportModal && (
+              <button
+                onClick={onOpenExportModal}
+                className="clay-btn-white px-3.5 py-2 text-xs flex items-center gap-1.5 shadow-sm hover:shadow-md cursor-pointer text-slate-800 font-bold"
+                title="Pusat Ekspor CSV dan Backup data logistik"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span className="hidden sm:inline">Ekspor & Backup</span>
+                <span className="sm:hidden">Ekspor</span>
+              </button>
+            )}
 
             <button
               onClick={handleReset}

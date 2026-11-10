@@ -79,7 +79,11 @@ interface AppContextType {
 
   // Helper / Utility
   resetToDefaultData: () => void;
-  exportToCSV: (filename: string, rows: Record<string, any>[]) => void;
+  exportToCSV: (filename: string, rows: Record<string, any>[], delimiter?: string) => void;
+  exportShipmentsData: (options?: { delimiter?: string; network?: string; dateFrom?: string; dateTo?: string }) => void;
+  exportForecastData: (options?: { delimiter?: string; format?: 'detailed' | 'matrix' }) => void;
+  exportControllingMatrixData: (options?: { delimiter?: string }) => void;
+  exportAllBackupBundle: (delimiter?: string) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -859,12 +863,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     seedInitialFirestoreData();
   };
 
-  const exportToCSV = (filename: string, rows: Record<string, any>[]) => {
+  const exportToCSV = (filename: string, rows: Record<string, any>[], delimiter: string = ';') => {
     if (!rows || !rows.length) return;
-    const separator = ';';
+    const separator = delimiter;
     const keys = Object.keys(rows[0]);
     const csvContent =
-      '\uFEFF' + // UTF-8 BOM
+      '\uFEFF' + // UTF-8 BOM for Microsoft Excel compatibility
       keys.join(separator) +
       '\n' +
       rows
@@ -873,7 +877,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             .map(k => {
               let cell = row[k] === null || row[k] === undefined ? '' : String(row[k]);
               cell = cell.replace(/"/g, '""');
-              if (cell.search(/("|,|\n)/g) >= 0 || cell.includes(';')) {
+              if (cell.search(/("|,|\n)/g) >= 0 || cell.includes(separator)) {
                 cell = `"${cell}"`;
               }
               return cell;
@@ -890,6 +894,154 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const exportShipmentsData = (options?: { delimiter?: string; network?: string; dateFrom?: string; dateTo?: string }) => {
+    const delim = options?.delimiter || ';';
+    let filtered = [...shipments];
+
+    if (options?.network && options.network !== 'ALL') {
+      filtered = filtered.filter(s => {
+        const dc = dcs.find(d => d.id === s.targetDcId);
+        return dc?.network === options.network;
+      });
+    }
+
+    if (options?.dateFrom) {
+      filtered = filtered.filter(s => s.date >= options.dateFrom!);
+    }
+    if (options?.dateTo) {
+      filtered = filtered.filter(s => s.date <= options.dateTo!);
+    }
+
+    const rows = filtered.map((s, idx) => {
+      const prod = products.find(p => p.id === s.productId);
+      const wh = warehouses.find(w => w.id === s.sourceWarehouseId);
+      const dc = dcs.find(d => d.id === s.targetDcId);
+      return {
+        No: idx + 1,
+        No_Surat_Jalan: s.soNumber,
+        Tanggal_Kirim: s.date,
+        Gudang_Asal: wh?.name || '-',
+        Kode_Gudang: wh?.code || '-',
+        Nama_DC_Tujuan: dc?.name || '-',
+        Kode_DC: dc?.code || '-',
+        Jaringan_DC: dc?.network || '-',
+        Wilayah_Distribusi: dc?.region || '-',
+        Kota_Tujuan: dc?.city || '-',
+        SKU_Barang: prod?.sku || '-',
+        Nama_Barang: prod?.name || '-',
+        Ukuran_Kemasan: prod?.packSize || '-',
+        Kuantiti_Kirim_Karton: s.qty,
+        Satuan: prod?.unit || 'Karton',
+        Status_Pengiriman: s.status,
+        Driver_Ekspedisi: s.driverName || '-',
+        No_Polisi_Kendaraan: s.vehicleNumber || '-',
+        Catatan_Pengiriman: s.notes || '-'
+      };
+    });
+
+    const dateStr = new Date().toISOString().split('T')[0];
+    exportToCSV(`Laporan_Pengiriman_Surat_Jalan_SO_${dateStr}`, rows, delim);
+  };
+
+  const exportForecastData = (options?: { delimiter?: string; format?: 'detailed' | 'matrix' }) => {
+    const delim = options?.delimiter || ';';
+    const dateStr = new Date().toISOString().split('T')[0];
+
+    if (options?.format === 'matrix') {
+      const rows = dcs.map((dc, idx) => {
+        const rowObj: Record<string, any> = {
+          No: idx + 1,
+          Jaringan: dc.network,
+          Kode_DC: dc.code,
+          Nama_DC: dc.name,
+          Wilayah: dc.region,
+          Kota: dc.city
+        };
+        let totalDc = 0;
+        products.forEach(p => {
+          const fc = forecasts.find(f => f.dcId === dc.id && f.productId === p.id);
+          const val = fc ? fc.forecastQty : 0;
+          rowObj[p.name] = val;
+          totalDc += val;
+        });
+        rowObj['Total_Forecast_Karton'] = totalDc;
+        return rowObj;
+      });
+      exportToCSV(`Target_Forecast_DC_Matriks_${dateStr}`, rows, delim);
+      return;
+    }
+
+    // Detailed relational rows
+    const rows: Record<string, any>[] = [];
+    let counter = 1;
+    dcs.forEach(dc => {
+      products.forEach(prod => {
+        const fcItem = forecasts.find(f => f.dcId === dc.id && f.productId === prod.id);
+        const forecastQty = fcItem ? fcItem.forecastQty : 0;
+
+        const sentQty = shipments
+          .filter(s => s.targetDcId === dc.id && s.productId === prod.id)
+          .reduce((sum, s) => sum + s.qty, 0);
+
+        const remainingQty = Math.max(0, forecastQty - sentQty);
+        const fulfillmentPct = forecastQty > 0 ? (sentQty / forecastQty) * 100 : 0;
+        const status = fulfillmentPct >= 100 ? 'Tercapai' : fulfillmentPct >= 50 ? 'Sedang Berjalan' : 'Kritis (<50%)';
+
+        rows.push({
+          No: counter++,
+          Periode: fcItem?.period || 'Nasional 2026',
+          Jaringan_DC: dc.network,
+          Wilayah_Distribusi: dc.region,
+          Kode_DC: dc.code,
+          Nama_DC: dc.name,
+          Kota: dc.city,
+          SKU_Barang: prod.sku,
+          Nama_Barang: prod.name,
+          Target_Forecast_Karton: forecastQty,
+          Realisasi_Terkirim_Karton: sentQty,
+          Sisa_Kekurangan_Karton: remainingQty,
+          Persentase_Capaian: `${fulfillmentPct.toFixed(1)}%`,
+          Status_Capaian: status
+        });
+      });
+    });
+
+    exportToCSV(`Laporan_Target_Forecast_DC_Rinci_${dateStr}`, rows, delim);
+  };
+
+  const exportControllingMatrixData = (options?: { delimiter?: string }) => {
+    const delim = options?.delimiter || ';';
+    const dateStr = new Date().toISOString().split('T')[0];
+
+    const rows = controllingSummaries.map((s, idx) => ({
+      No: idx + 1,
+      Kode_DC: s.dc.code,
+      Nama_DC: s.dc.name,
+      Jaringan: s.dc.network,
+      Wilayah: s.dc.region,
+      Kota: s.dc.city,
+      SKU_Barang: s.productSku,
+      Nama_Barang: s.productName,
+      Target_Forecast_Karton: s.forecastQty,
+      Realisasi_Kirim_Karton: s.sentQty,
+      Sisa_Kekurangan_Karton: s.remainingQty,
+      Persentase_Capaian: `${s.percentFulfilled.toFixed(1)}%`,
+      Status: s.status
+    }));
+
+    exportToCSV(`Matriks_Controlling_Realisasi_vs_Forecast_${dateStr}`, rows, delim);
+  };
+
+  const exportAllBackupBundle = (delimiter: string = ';') => {
+    exportShipmentsData({ delimiter });
+    setTimeout(() => {
+      exportForecastData({ delimiter, format: 'detailed' });
+    }, 400);
+    setTimeout(() => {
+      exportControllingMatrixData({ delimiter });
+    }, 800);
   };
 
   return (
@@ -924,6 +1076,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteShipment,
         resetToDefaultData,
         exportToCSV,
+        exportShipmentsData,
+        exportForecastData,
+        exportControllingMatrixData,
+        exportAllBackupBundle,
       }}
     >
       {children}

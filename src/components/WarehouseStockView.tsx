@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { Warehouse } from '../types';
 import { formatNumber } from '../utils/formatters';
@@ -16,7 +16,11 @@ import {
   Trash2,
   Building2,
   Sparkles,
-  AlertCircle
+  AlertCircle,
+  Search,
+  RotateCcw,
+  Calendar,
+  Filter
 } from 'lucide-react';
 import { ClayWarehouse } from './ClayIcons';
 
@@ -29,7 +33,18 @@ export const WarehouseStockView: React.FC<WarehouseStockViewProps> = ({
 }) => {
   const { warehouses, products, stocks, mutations, adjustStock, deleteWarehouse } = useApp();
 
+  // Warehouse list filters
+  const [warehouseSearch, setWarehouseSearch] = useState('');
+  const [warehouseTypeFilter, setWarehouseTypeFilter] = useState<'ALL' | 'MAIN' | 'BRANCH'>('ALL');
+
+  // Mutation log filters
   const [activeWhId, setActiveWhId] = useState<string>('ALL');
+  const [mutationSearch, setMutationSearch] = useState('');
+  const [mutationTypeFilter, setMutationTypeFilter] = useState<string>('ALL');
+  const [mutationProdId, setMutationProdId] = useState<string>('ALL');
+  const [mutationDateFrom, setMutationDateFrom] = useState('');
+  const [mutationDateTo, setMutationDateTo] = useState('');
+
   const [adjustModalOpen, setAdjustModalOpen] = useState(false);
   const [adjustWhId, setAdjustWhId] = useState(warehouses[0]?.id || '');
   const [adjustProdId, setAdjustProdId] = useState(products[0]?.id || '');
@@ -76,11 +91,66 @@ export const WarehouseStockView: React.FC<WarehouseStockViewProps> = ({
     setAdjustModalOpen(false);
   };
 
+  // Filtered warehouses
+  const filteredWarehouses = useMemo(() => {
+    return warehouses.filter(wh => {
+      if (warehouseTypeFilter === 'MAIN' && !wh.isMain) return false;
+      if (warehouseTypeFilter === 'BRANCH' && wh.isMain) return false;
+
+      if (warehouseSearch.trim()) {
+        const q = warehouseSearch.toLowerCase();
+        const mName = wh.name.toLowerCase().includes(q);
+        const mCode = wh.code.toLowerCase().includes(q);
+        const mLoc = wh.location.toLowerCase().includes(q);
+        if (!mName && !mCode && !mLoc) return false;
+      }
+      return true;
+    });
+  }, [warehouses, warehouseTypeFilter, warehouseSearch]);
+
+  const isWarehouseFilterActive = Boolean(warehouseSearch.trim() || warehouseTypeFilter !== 'ALL');
+
   // Filtered mutations
-  const filteredMutations = mutations.filter(m => {
-    if (activeWhId !== 'ALL' && m.warehouseId !== activeWhId) return false;
-    return true;
-  });
+  const filteredMutations = useMemo(() => {
+    return mutations.filter(m => {
+      if (activeWhId !== 'ALL' && m.warehouseId !== activeWhId) return false;
+      if (mutationTypeFilter !== 'ALL' && m.type !== mutationTypeFilter) return false;
+      if (mutationProdId !== 'ALL' && m.productId !== mutationProdId) return false;
+
+      if (mutationDateFrom && m.timestamp.split(' ')[0] < mutationDateFrom) return false;
+      if (mutationDateTo && m.timestamp.split(' ')[0] > mutationDateTo) return false;
+
+      if (mutationSearch.trim()) {
+        const q = mutationSearch.toLowerCase();
+        const prod = products.find(p => p.id === m.productId)?.name.toLowerCase() || '';
+        const wh = warehouses.find(w => w.id === m.warehouseId)?.name.toLowerCase() || '';
+        const ref = m.referenceNumber.toLowerCase();
+        const notes = m.notes.toLowerCase();
+        if (!ref.includes(q) && !notes.includes(q) && !prod.includes(q) && !wh.includes(q)) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [mutations, activeWhId, mutationTypeFilter, mutationProdId, mutationDateFrom, mutationDateTo, mutationSearch, products, warehouses]);
+
+  const isMutationFilterActive = Boolean(
+    activeWhId !== 'ALL' ||
+    mutationTypeFilter !== 'ALL' ||
+    mutationProdId !== 'ALL' ||
+    mutationDateFrom ||
+    mutationDateTo ||
+    mutationSearch.trim()
+  );
+
+  const handleResetMutationFilters = () => {
+    setActiveWhId('ALL');
+    setMutationTypeFilter('ALL');
+    setMutationProdId('ALL');
+    setMutationDateFrom('');
+    setMutationDateTo('');
+    setMutationSearch('');
+  };
 
   return (
     <div className="space-y-6 pb-12 text-slate-900">
@@ -115,117 +185,166 @@ export const WarehouseStockView: React.FC<WarehouseStockViewProps> = ({
         </div>
       </div>
 
-      {/* Warehouse Stock Matrix Cards (Frosted Glass with White Clay Chips) */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        {warehouses.map(wh => {
-          const whStocks = stocks.filter(s => s.warehouseId === wh.id);
-          const totalUnitsInWh = whStocks.reduce((sum, s) => sum + s.qty, 0);
+      {/* Warehouse Filter Bar */}
+      <div className="clay-glass-card p-3.5 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 flex-1 w-full">
+          <div className="relative clay-search-pill flex items-center px-3.5 py-1.5 flex-1">
+            <Search className="w-4 h-4 text-slate-400 shrink-0 mr-2" />
+            <input
+              type="text"
+              value={warehouseSearch}
+              onChange={e => setWarehouseSearch(e.target.value)}
+              placeholder="Filter gudang berdasarkan nama, kode, atau alamat..."
+              className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none"
+            />
+          </div>
 
-          return (
-            <div
-              key={wh.id}
-              className="clay-glass-card p-5 flex flex-col justify-between"
+          <div className="clay-search-pill px-3 py-1.5 shrink-0">
+            <select
+              value={warehouseTypeFilter}
+              onChange={e => setWarehouseTypeFilter(e.target.value as any)}
+              className="text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
             >
-              <div>
-                <div className="flex items-center justify-between border-b border-white/60 pb-3.5">
-                  <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-2xl bg-white shadow-md flex items-center justify-center font-bold border border-white shrink-0">
-                      <WarehouseIcon className="w-5 h-5 text-blue-600" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <h2 className="font-bold text-slate-900 text-sm leading-tight">{wh.name}</h2>
-                        {wh.isMain && (
-                          <span className="text-[10px] uppercase font-bold text-blue-800 bg-white border border-white px-2 py-0.5 rounded-full shadow-xs">
-                            Utama
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-[11px] text-slate-500 font-mono font-semibold">{wh.code}</span>
-                    </div>
-                  </div>
+              <option value="ALL">Semua Jenis Fasilitas ({warehouses.length})</option>
+              <option value="MAIN">Hanya Pabrik Utama</option>
+              <option value="BRANCH">Gudang Cabang / Penyangga</option>
+            </select>
+          </div>
+        </div>
 
-                  {/* Actions: Edit & Delete */}
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => handleOpenEditWh(wh)}
-                      className="p-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-600 hover:text-blue-600 shadow-xs border border-white/80 transition-all cursor-pointer"
-                      title="Edit Informasi Gudang"
-                    >
-                      <Edit className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteWh(wh)}
-                      className="p-1.5 rounded-xl bg-white hover:bg-red-50 text-slate-400 hover:text-red-600 shadow-xs border border-white/80 transition-all cursor-pointer"
-                      title="Hapus Gudang"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                <p className="text-xs text-slate-600 font-medium mt-2">{wh.location}</p>
-
-                {/* Products Stock in this Warehouse */}
-                <div className="mt-4 space-y-2.5">
-                  <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
-                    Ketersediaan per Barang
-                  </span>
-                  {products.map(prod => {
-                    const entry = whStocks.find(s => s.productId === prod.id);
-                    const qty = entry ? entry.qty : 0;
-                    const isLow = qty <= prod.minStockAlert;
-
-                    return (
-                      <div
-                        key={prod.id}
-                        className="clay-chip-white p-3 flex items-center justify-between"
-                      >
-                        <div>
-                          <div className="font-bold text-slate-900 text-xs">{prod.name}</div>
-                          <span className="text-[11px] text-slate-500 font-mono font-semibold">{prod.sku}</span>
-                        </div>
-                        <div className="flex items-center gap-2.5">
-                          <div className="text-right">
-                            <div className={`font-black text-sm ${isLow ? 'text-amber-600' : 'text-slate-900'}`}>
-                              {formatNumber(qty)}
-                            </div>
-                            <span className="text-[10px] text-slate-500 font-medium">{prod.unit}</span>
-                          </div>
-                          <button
-                            onClick={() => handleOpenAdjust(wh.id, prod.id)}
-                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-slate-100 rounded-full cursor-pointer transition-colors"
-                            title="Koreksi Stok Opname"
-                          >
-                            <SlidersHorizontal className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Card Footer */}
-              <div className="mt-4 pt-3.5 border-t border-white/60 flex items-center justify-between text-xs">
-                <span className="text-slate-600 font-medium">
-                  Total Fisik: <strong className="text-slate-900 font-bold">{formatNumber(totalUnitsInWh)}</strong> ctn
-                </span>
-                <button
-                  onClick={() => onOpenStockInModal(wh.id)}
-                  className="clay-btn-white px-3 py-1 text-xs font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Stok Masuk
-                </button>
-              </div>
-            </div>
-          );
-        })}
+        {isWarehouseFilterActive && (
+          <button
+            onClick={() => {
+              setWarehouseSearch('');
+              setWarehouseTypeFilter('ALL');
+            }}
+            className="clay-btn-white px-3 py-1 text-xs text-blue-700 hover:text-blue-900 font-bold flex items-center gap-1.5 cursor-pointer shrink-0"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Reset</span>
+          </button>
+        )}
       </div>
 
+      {/* Warehouse Stock Matrix Cards (Frosted Glass with White Clay Chips) */}
+      {filteredWarehouses.length === 0 ? (
+        <div className="clay-glass-card p-8 text-center space-y-2">
+          <WarehouseIcon className="w-8 h-8 text-slate-400 mx-auto" />
+          <h4 className="font-bold text-slate-700 text-sm">Tidak ada gudang yang cocok</h4>
+          <p className="text-xs text-slate-400">Silakan sesuaikan kata kunci pencarian atau tipe gudang.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          {filteredWarehouses.map(wh => {
+            const whStocks = stocks.filter(s => s.warehouseId === wh.id);
+            const totalUnitsInWh = whStocks.reduce((sum, s) => sum + s.qty, 0);
+
+            return (
+              <div
+                key={wh.id}
+                className="clay-glass-card p-5 flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-center justify-between border-b border-white/60 pb-3.5">
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-2xl bg-white shadow-md flex items-center justify-center font-bold border border-white shrink-0">
+                        <WarehouseIcon className="w-5 h-5 text-blue-600" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <h2 className="font-bold text-slate-900 text-sm leading-tight">{wh.name}</h2>
+                          {wh.isMain && (
+                            <span className="text-[10px] uppercase font-bold text-blue-800 bg-white border border-white px-2 py-0.5 rounded-full shadow-xs">
+                              Utama
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[11px] text-slate-500 font-mono font-semibold">{wh.code}</span>
+                      </div>
+                    </div>
+
+                    {/* Actions: Edit & Delete */}
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleOpenEditWh(wh)}
+                        className="p-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-600 hover:text-blue-600 shadow-xs border border-white/80 transition-all cursor-pointer"
+                        title="Edit Informasi Gudang"
+                      >
+                        <Edit className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteWh(wh)}
+                        className="p-1.5 rounded-xl bg-white hover:bg-red-50 text-slate-400 hover:text-red-600 shadow-xs border border-white/80 transition-all cursor-pointer"
+                        title="Hapus Gudang"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-600 font-medium mt-2">{wh.location}</p>
+
+                  {/* Products Stock in this Warehouse */}
+                  <div className="mt-4 space-y-2.5">
+                    <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                      Ketersediaan per Barang
+                    </span>
+                    {products.map(prod => {
+                      const entry = whStocks.find(s => s.productId === prod.id);
+                      const qty = entry ? entry.qty : 0;
+                      const isLow = qty <= prod.minStockAlert;
+
+                      return (
+                        <div
+                          key={prod.id}
+                          className="clay-chip-white p-3 flex items-center justify-between"
+                        >
+                          <div>
+                            <div className="font-bold text-slate-900 text-xs">{prod.name}</div>
+                            <span className="text-[11px] text-slate-500 font-mono font-semibold">{prod.sku}</span>
+                          </div>
+                          <div className="flex items-center gap-2.5">
+                            <div className="text-right">
+                              <div className={`font-black text-sm ${isLow ? 'text-amber-600' : 'text-slate-900'}`}>
+                                {formatNumber(qty)}
+                              </div>
+                              <span className="text-[10px] text-slate-500 font-medium">{prod.unit}</span>
+                            </div>
+                            <button
+                              onClick={() => handleOpenAdjust(wh.id, prod.id)}
+                              className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-slate-100 rounded-full cursor-pointer transition-colors"
+                              title="Koreksi Stok Opname"
+                            >
+                              <SlidersHorizontal className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Card Footer */}
+                <div className="mt-4 pt-3.5 border-t border-white/60 flex items-center justify-between text-xs">
+                  <span className="text-slate-600 font-medium">
+                    Total Fisik: <strong className="text-slate-900 font-bold">{formatNumber(totalUnitsInWh)}</strong> ctn
+                  </span>
+                  <button
+                    onClick={() => onOpenStockInModal(wh.id)}
+                    className="clay-btn-white px-3 py-1 text-xs font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Stok Masuk
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Stock Mutation Log (Clay Table Sheet) */}
-      <div className="clay-table-sheet overflow-hidden">
-        <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50">
+      <div className="clay-table-sheet overflow-hidden space-y-3 p-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold">
               <History className="w-4 h-4" />
@@ -239,21 +358,106 @@ export const WarehouseStockView: React.FC<WarehouseStockViewProps> = ({
               </p>
             </div>
           </div>
+        </div>
 
-          <div className="flex items-center gap-2">
-            <div className="clay-search-pill px-3 py-1">
-              <select
-                value={activeWhId}
-                onChange={e => setActiveWhId(e.target.value)}
-                className="text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
-              >
-                <option value="ALL">Semua Gudang</option>
-                {warehouses.map(w => (
-                  <option key={w.id} value={w.id}>{w.name}</option>
-                ))}
-              </select>
-            </div>
+        {/* Mutation Filters Bar */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+          {/* Search Input */}
+          <div className="relative clay-search-pill flex items-center px-3 py-1.5">
+            <Search className="w-3.5 h-3.5 text-slate-400 shrink-0 mr-2" />
+            <input
+              type="text"
+              value={mutationSearch}
+              onChange={e => setMutationSearch(e.target.value)}
+              placeholder="Cari No SO, referensi, catatan..."
+              className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none"
+            />
           </div>
+
+          {/* Warehouse Filter */}
+          <div className="clay-search-pill px-3 py-1.5">
+            <select
+              value={activeWhId}
+              onChange={e => setActiveWhId(e.target.value)}
+              className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+            >
+              <option value="ALL">Semua Gudang</option>
+              {warehouses.map(w => (
+                <option key={w.id} value={w.id}>{w.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Mutation Type Filter */}
+          <div className="clay-search-pill px-3 py-1.5">
+            <select
+              value={mutationTypeFilter}
+              onChange={e => setMutationTypeFilter(e.target.value)}
+              className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+            >
+              <option value="ALL">Semua Jenis Mutasi</option>
+              <option value="IN_RECEIPT">Penerimaan Pabrik (+ Masuk)</option>
+              <option value="OUT_SHIPMENT">Pengiriman SO (- Keluar)</option>
+              <option value="ADJUSTMENT">Koreksi Opname Fisik</option>
+              <option value="VOID_SHIPMENT">Pembatalan Surat Jalan</option>
+            </select>
+          </div>
+
+          {/* Product Filter */}
+          <div className="clay-search-pill px-3 py-1.5">
+            <select
+              value={mutationProdId}
+              onChange={e => setMutationProdId(e.target.value)}
+              className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+            >
+              <option value="ALL">Semua Barang</option>
+              {products.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Date Filter & Counter Row */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-slate-100 text-xs">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-bold text-slate-500">Rentang Tanggal:</span>
+              <div className="clay-search-pill px-2.5 py-1 flex items-center gap-1">
+                <Calendar className="w-3 h-3 text-slate-400" />
+                <input
+                  type="date"
+                  value={mutationDateFrom}
+                  onChange={e => setMutationDateFrom(e.target.value)}
+                  className="text-[11px] font-semibold text-slate-800 bg-transparent focus:outline-none"
+                />
+              </div>
+              <span className="text-slate-400">-</span>
+              <div className="clay-search-pill px-2.5 py-1 flex items-center gap-1">
+                <Calendar className="w-3 h-3 text-slate-400" />
+                <input
+                  type="date"
+                  value={mutationDateTo}
+                  onChange={e => setMutationDateTo(e.target.value)}
+                  className="text-[11px] font-semibold text-slate-800 bg-transparent focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <span className="text-slate-500 font-medium">
+              ({filteredMutations.length} mutasi)
+            </span>
+          </div>
+
+          {isMutationFilterActive && (
+            <button
+              onClick={handleResetMutationFilters}
+              className="clay-btn-white px-3 py-1 text-xs text-blue-700 hover:text-blue-900 font-bold flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>Reset Filter Mutasi</span>
+            </button>
+          )}
         </div>
 
         <div className="overflow-x-auto">

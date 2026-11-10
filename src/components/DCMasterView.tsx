@@ -15,7 +15,10 @@ import {
   Target, 
   Download,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  RotateCcw,
+  Filter,
+  ArrowUpDown
 } from 'lucide-react';
 
 interface DCMasterViewProps {
@@ -30,6 +33,9 @@ export const DCMasterView: React.FC<DCMasterViewProps> = ({ onOpenShipmentForDC 
   const [searchTerm, setSearchTerm] = useState('');
   const [networkFilter, setNetworkFilter] = useState<'ALL' | DCNetwork>('ALL');
   const [regionFilter, setRegionFilter] = useState<string>('ALL');
+  const [fulfillmentFilter, setFulfillmentFilter] = useState<'ALL' | 'ACHIEVED' | 'PROGRESS' | 'CRITICAL' | 'ZERO'>('ALL');
+  const [forecastQtyFilter, setForecastQtyFilter] = useState<'ALL' | 'TIER_HIGH' | 'TIER_MED' | 'TIER_LOW' | 'TIER_ZERO'>('ALL');
+  const [sortBy, setSortBy] = useState<'NAME_ASC' | 'CODE_ASC' | 'REGION_TARGET_DESC' | 'REGION_TARGET_ASC' | 'TARGET_DESC' | 'TARGET_ASC' | 'PCT_DESC' | 'PCT_ASC'>('NAME_ASC');
 
   // All distinct regions in the DC list
   const existingRegions = useMemo(() => {
@@ -37,24 +43,92 @@ export const DCMasterView: React.FC<DCMasterViewProps> = ({ onOpenShipmentForDC 
     return list.sort();
   }, [dcs]);
 
-  // Filtered DC list
-  const filteredDCs = useMemo(() => {
-    return dcs.filter(dc => {
-      if (networkFilter !== 'ALL' && dc.network !== networkFilter) return false;
-      if (regionFilter !== 'ALL' && dc.region !== regionFilter) return false;
-
-      if (searchTerm.trim()) {
-        const q = searchTerm.toLowerCase();
-        const mName = dc.name.toLowerCase().includes(q);
-        const mCode = dc.code.toLowerCase().includes(q);
-        const mCity = dc.city.toLowerCase().includes(q);
-        const mRegion = dc.region.toLowerCase().includes(q);
-        if (!mName && !mCode && !mCity && !mRegion) return false;
-      }
-
-      return true;
+  // Regional target totals map
+  const regionTotalsMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    controllingSummaries.forEach(s => {
+      map[s.dc.region] = (map[s.dc.region] || 0) + s.forecastQty;
     });
-  }, [dcs, networkFilter, regionFilter, searchTerm]);
+    return map;
+  }, [controllingSummaries]);
+
+  const isFilterActive = useMemo(() => {
+    return Boolean(
+      searchTerm.trim() ||
+      networkFilter !== 'ALL' ||
+      regionFilter !== 'ALL' ||
+      fulfillmentFilter !== 'ALL' ||
+      forecastQtyFilter !== 'ALL' ||
+      sortBy !== 'NAME_ASC'
+    );
+  }, [searchTerm, networkFilter, regionFilter, fulfillmentFilter, forecastQtyFilter, sortBy]);
+
+  const handleResetFilters = () => {
+    setSearchTerm('');
+    setNetworkFilter('ALL');
+    setRegionFilter('ALL');
+    setFulfillmentFilter('ALL');
+    setForecastQtyFilter('ALL');
+    setSortBy('NAME_ASC');
+  };
+
+  // Filtered DC list with fulfillment statistics and sorting
+  const filteredDCs = useMemo(() => {
+    return dcs
+      .map(dc => {
+        const summaries = controllingSummaries.filter(s => s.dc.id === dc.id);
+        const totalFc = summaries.reduce((acc, s) => acc + s.forecastQty, 0);
+        const totalSent = summaries.reduce((acc, s) => acc + s.sentQty, 0);
+        const pct = totalFc > 0 ? (totalSent / totalFc) * 100 : 0;
+        return { dc, totalFc, totalSent, pct };
+      })
+      .filter(({ dc, totalFc, totalSent, pct }) => {
+        if (networkFilter !== 'ALL' && dc.network !== networkFilter) return false;
+        if (regionFilter !== 'ALL' && dc.region !== regionFilter) return false;
+
+        if (fulfillmentFilter === 'ACHIEVED' && pct < 100) return false;
+        if (fulfillmentFilter === 'PROGRESS' && (pct < 50 || pct >= 100)) return false;
+        if (fulfillmentFilter === 'CRITICAL' && (pct >= 50 || totalSent === 0)) return false;
+        if (fulfillmentFilter === 'ZERO' && totalSent > 0) return false;
+
+        // Forecast Qty Filter
+        if (forecastQtyFilter !== 'ALL') {
+          if (forecastQtyFilter === 'TIER_HIGH' && totalFc < 5000) return false;
+          if (forecastQtyFilter === 'TIER_MED' && (totalFc < 1000 || totalFc >= 5000)) return false;
+          if (forecastQtyFilter === 'TIER_LOW' && (totalFc <= 0 || totalFc >= 1000)) return false;
+          if (forecastQtyFilter === 'TIER_ZERO' && totalFc > 0) return false;
+        }
+
+        if (searchTerm.trim()) {
+          const q = searchTerm.toLowerCase();
+          const mName = dc.name.toLowerCase().includes(q);
+          const mCode = dc.code.toLowerCase().includes(q);
+          const mCity = dc.city.toLowerCase().includes(q);
+          const mRegion = dc.region.toLowerCase().includes(q);
+          if (!mName && !mCode && !mCity && !mRegion) return false;
+        }
+
+        return true;
+      })
+      .sort((a, b) => {
+        if (sortBy === 'REGION_TARGET_DESC') {
+          const regDiff = (regionTotalsMap[b.dc.region] || 0) - (regionTotalsMap[a.dc.region] || 0);
+          return regDiff !== 0 ? regDiff : b.totalFc - a.totalFc;
+        }
+        if (sortBy === 'REGION_TARGET_ASC') {
+          const regDiff = (regionTotalsMap[a.dc.region] || 0) - (regionTotalsMap[b.dc.region] || 0);
+          return regDiff !== 0 ? regDiff : a.totalFc - b.totalFc;
+        }
+        if (sortBy === 'TARGET_DESC') return b.totalFc - a.totalFc;
+        if (sortBy === 'TARGET_ASC') return a.totalFc - b.totalFc;
+        if (sortBy === 'NAME_ASC') return a.dc.name.localeCompare(b.dc.name);
+        if (sortBy === 'CODE_ASC') return a.dc.code.localeCompare(b.dc.code);
+        if (sortBy === 'PCT_DESC') return b.pct - a.pct;
+        if (sortBy === 'PCT_ASC') return a.pct - b.pct;
+        return 0;
+      })
+      .map(item => item.dc);
+  }, [dcs, controllingSummaries, networkFilter, regionFilter, fulfillmentFilter, forecastQtyFilter, sortBy, searchTerm, regionTotalsMap]);
 
   // Statistics
   const totalIDM = useMemo(() => dcs.filter(d => d.network === 'Indomarco').length, [dcs]);
@@ -200,20 +274,71 @@ export const DCMasterView: React.FC<DCMasterViewProps> = ({ onOpenShipmentForDC 
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="clay-glass-card p-4 space-y-3">
-        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+      <div className="clay-glass-card p-4 sm:p-5 space-y-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
           {/* Search Input */}
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <div className="relative clay-search-pill flex items-center px-3.5 py-1.5 sm:col-span-2 lg:col-span-1">
+            <Search className="w-4 h-4 text-slate-400 shrink-0 mr-2" />
             <input
               type="text"
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
-              placeholder="Cari berdasarkan nama DC, kode (misal: DC-IDM-001), kota, atau wilayah..."
-              className="clay-search-pill w-full pl-9 pr-4 py-2.5 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Cari DC, kode, kota, wilayah..."
+              className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none"
             />
           </div>
 
+          {/* Fulfillment Status Filter */}
+          <div className="clay-search-pill px-3 py-1.5">
+            <select
+              value={fulfillmentFilter}
+              onChange={e => setFulfillmentFilter(e.target.value as any)}
+              className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+            >
+              <option value="ALL">Semua Status Capaian Suplai</option>
+              <option value="ACHIEVED">Tercapai 100% (&ge;100%)</option>
+              <option value="PROGRESS">Sedang Berjalan (50% - 99%)</option>
+              <option value="CRITICAL">Kritis (&lt; 50%)</option>
+              <option value="ZERO">Belum Ada Pengiriman (0%)</option>
+            </select>
+          </div>
+
+          {/* Forecast Qty Filter */}
+          <div className="clay-search-pill px-3 py-1.5">
+            <select
+              value={forecastQtyFilter}
+              onChange={e => setForecastQtyFilter(e.target.value as any)}
+              className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+            >
+              <option value="ALL">Semua Kuantiti Target</option>
+              <option value="TIER_HIGH">🔥 Target Besar (&ge; 5.000 ctn)</option>
+              <option value="TIER_MED">⚡ Target Sedang (1.000 - 4.999 ctn)</option>
+              <option value="TIER_LOW">📦 Target Kecil (1 - 999 ctn)</option>
+              <option value="TIER_ZERO">Belum Ada Target (0 ctn)</option>
+            </select>
+          </div>
+
+          {/* Sort Selector */}
+          <div className="clay-search-pill px-3 py-1.5 sm:col-span-2 lg:col-span-2">
+            <select
+              value={sortBy}
+              onChange={e => setSortBy(e.target.value as any)}
+              className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+            >
+              <option value="REGION_TARGET_DESC">🗺️ Wilayah: Target Terbanyak &rarr; Terkecil</option>
+              <option value="REGION_TARGET_ASC">🗺️ Wilayah: Target Terkecil &rarr; Terbanyak</option>
+              <option value="TARGET_DESC">🎯 Target DC Terbesar &rarr; Terkecil</option>
+              <option value="TARGET_ASC">🎯 Target DC Terkecil &rarr; Terbesar</option>
+              <option value="PCT_DESC">🏆 Capaian % Tertinggi</option>
+              <option value="PCT_ASC">⚡ Capaian % Terendah (Prioritas)</option>
+              <option value="NAME_ASC">🏢 Nama DC (A - Z)</option>
+              <option value="CODE_ASC">🔢 Kode DC</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Network and Region Selector Row */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pt-1">
           {/* Network Segmented Filter */}
           <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-full shrink-0">
             <button
@@ -247,47 +372,89 @@ export const DCMasterView: React.FC<DCMasterViewProps> = ({ onOpenShipmentForDC 
               Indogrosir ({totalIGR})
             </button>
           </div>
+
+          {/* Region Filter Chips */}
+          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none flex-1 lg:justify-end">
+            <span className="text-[11px] font-bold text-slate-500 shrink-0 mr-1 flex items-center gap-1">
+              <MapPin className="w-3 h-3" />
+              <span>Wilayah:</span>
+            </span>
+            <button
+              onClick={() => setRegionFilter('ALL')}
+              className={`px-3 py-1 text-[11px] font-bold rounded-full transition-all shrink-0 cursor-pointer ${
+                regionFilter === 'ALL'
+                  ? 'clay-btn-apply py-1 px-3 text-white'
+                  : 'clay-chip-white text-slate-700 hover:text-slate-900'
+              }`}
+            >
+              Semua
+            </button>
+            {existingRegions.map(reg => {
+              const count = dcs.filter(d => d.region === reg).length;
+              const isSelected = regionFilter === reg;
+              return (
+                <button
+                  key={reg}
+                  onClick={() => setRegionFilter(reg)}
+                  className={`px-3 py-1 text-[11px] font-bold rounded-full transition-all shrink-0 cursor-pointer ${
+                    isSelected
+                      ? 'clay-btn-apply py-1 px-3 text-white'
+                      : 'clay-chip-white text-slate-700 hover:text-slate-900'
+                  }`}
+                >
+                  {reg} ({count})
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        {/* Region Filter Chips */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pt-1 scrollbar-none">
-          <span className="text-[11px] font-bold text-slate-500 shrink-0 mr-1 flex items-center gap-1">
-            <MapPin className="w-3 h-3" />
-            <span>Zona Wilayah:</span>
-          </span>
-          <button
-            onClick={() => setRegionFilter('ALL')}
-            className={`px-3 py-1 text-[11px] font-bold rounded-full transition-all shrink-0 cursor-pointer ${
-              regionFilter === 'ALL'
-                ? 'clay-btn-apply py-1 px-3 text-white'
-                : 'clay-chip-white text-slate-700 hover:text-slate-900'
-            }`}
-          >
-            Semua Wilayah
-          </button>
-          {existingRegions.map(reg => {
-            const count = dcs.filter(d => d.region === reg).length;
-            const isSelected = regionFilter === reg;
-            return (
-              <button
-                key={reg}
-                onClick={() => setRegionFilter(reg)}
-                className={`px-3 py-1 text-[11px] font-bold rounded-full transition-all shrink-0 cursor-pointer ${
-                  isSelected
-                    ? 'clay-btn-apply py-1 px-3 text-white'
-                    : 'clay-chip-white text-slate-700 hover:text-slate-900'
-                }`}
-              >
-                {reg} ({count})
-              </button>
-            );
-          })}
+        {/* Filter Summary & Quick Reset */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-white/60 text-xs">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-slate-600 font-semibold">
+              Menampilkan <strong>{filteredDCs.length}</strong> dari <strong>{dcs.length}</strong> titik DC
+            </span>
+            {isFilterActive && (
+              <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-bold">
+                Filter Aktif
+              </span>
+            )}
+          </div>
+
+          {isFilterActive && (
+            <button
+              onClick={handleResetFilters}
+              className="clay-btn-white px-3 py-1 text-xs text-blue-700 hover:text-blue-900 font-bold flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset Filter</span>
+            </button>
+          )}
         </div>
       </div>
 
       {/* DC List Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredDCs.map(dc => {
+      {filteredDCs.length === 0 ? (
+        <div className="clay-glass-card p-10 text-center space-y-3">
+          <div className="w-14 h-14 rounded-3xl bg-blue-50 text-blue-500 mx-auto flex items-center justify-center">
+            <Building2 className="w-7 h-7" />
+          </div>
+          <h3 className="font-bold text-slate-800 text-base">Tidak ada Distribution Center yang cocok</h3>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto">
+            Tidak ditemukan DC yang sesuai dengan kata kunci, jaringan, wilayah, atau status capaian suplai yang dipilih.
+          </p>
+          <button
+            onClick={handleResetFilters}
+            className="clay-btn-apply px-4 py-2 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-md"
+          >
+            <RotateCcw className="w-4 h-4" />
+            <span>Reset Filter</span>
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredDCs.map(dc => {
           const summaries = controllingSummaries.filter(s => s.dc.id === dc.id);
           const totalForecast = summaries.reduce((sum, s) => sum + s.forecastQty, 0);
           const totalSent = summaries.reduce((sum, s) => sum + s.sentQty, 0);
@@ -439,22 +606,6 @@ export const DCMasterView: React.FC<DCMasterViewProps> = ({ onOpenShipmentForDC 
           );
         })}
       </div>
-
-      {filteredDCs.length === 0 && (
-        <div className="clay-glass-card p-12 text-center">
-          <Building2 className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-          <h3 className="text-sm font-bold text-slate-700">Tidak ada DC yang cocok dengan filter</h3>
-          <p className="text-xs text-slate-500 mt-1">
-            Coba ubah kata kunci pencarian, filter jaringan, atau filter wilayah.
-          </p>
-          <button
-            onClick={handleOpenAdd}
-            className="clay-btn-apply px-4 py-2 text-xs font-bold mt-4 inline-flex items-center gap-1.5 cursor-pointer shadow-md"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Tambah DC Baru Sekarang</span>
-          </button>
-        </div>
       )}
 
       {/* Modal Add / Edit DC */}

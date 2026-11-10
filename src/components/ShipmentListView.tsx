@@ -13,7 +13,12 @@ import {
   Building2, 
   Download,
   Check,
-  Clock
+  Clock,
+  Filter,
+  RotateCcw,
+  Calendar,
+  MapPin,
+  CheckCircle2
 } from 'lucide-react';
 
 interface ShipmentListViewProps {
@@ -30,26 +35,82 @@ export const ShipmentListView: React.FC<ShipmentListViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedWarehouse, setSelectedWarehouse] = useState('ALL');
   const [selectedProduct, setSelectedProduct] = useState('ALL');
+  const [selectedNetwork, setSelectedNetwork] = useState('ALL');
+  const [selectedRegion, setSelectedRegion] = useState('ALL');
+  const [selectedStatus, setSelectedStatus] = useState('ALL');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+
+  // Extract unique regions
+  const regions = useMemo(() => {
+    return Array.from(new Set(dcs.map(d => d.region))).sort();
+  }, [dcs]);
+
+  const isFilterActive = useMemo(() => {
+    return Boolean(
+      searchQuery.trim() ||
+      selectedWarehouse !== 'ALL' ||
+      selectedProduct !== 'ALL' ||
+      selectedNetwork !== 'ALL' ||
+      selectedRegion !== 'ALL' ||
+      selectedStatus !== 'ALL' ||
+      dateFrom ||
+      dateTo
+    );
+  }, [searchQuery, selectedWarehouse, selectedProduct, selectedNetwork, selectedRegion, selectedStatus, dateFrom, dateTo]);
+
+  const handleResetFilters = () => {
+    setSearchQuery('');
+    setSelectedWarehouse('ALL');
+    setSelectedProduct('ALL');
+    setSelectedNetwork('ALL');
+    setSelectedRegion('ALL');
+    setSelectedStatus('ALL');
+    setDateFrom('');
+    setDateTo('');
+  };
 
   // Filtered shipments
   const filteredShipments = useMemo(() => {
     return shipments.filter(s => {
+      const dc = dcs.find(d => d.id === s.targetDcId);
+
       if (selectedWarehouse !== 'ALL' && s.sourceWarehouseId !== selectedWarehouse) return false;
       if (selectedProduct !== 'ALL' && s.productId !== selectedProduct) return false;
+      if (selectedNetwork !== 'ALL' && dc?.network !== selectedNetwork) return false;
+      if (selectedRegion !== 'ALL' && dc?.region !== selectedRegion) return false;
+      if (selectedStatus !== 'ALL' && s.status !== selectedStatus) return false;
+      if (dateFrom && s.date < dateFrom) return false;
+      if (dateTo && s.date > dateTo) return false;
 
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
         const prod = products.find(p => p.id === s.productId)?.name.toLowerCase() || '';
-        const dc = dcs.find(d => d.id === s.targetDcId)?.name.toLowerCase() || '';
+        const prodSku = products.find(p => p.id === s.productId)?.sku.toLowerCase() || '';
+        const dcName = (dc?.name || '').toLowerCase();
+        const dcCode = (dc?.code || '').toLowerCase();
+        const dcCity = (dc?.city || '').toLowerCase();
         const driver = (s.driverName || '').toLowerCase();
+        const nopol = (s.vehicleNumber || '').toLowerCase();
         const so = s.soNumber.toLowerCase();
-        if (!so.includes(query) && !prod.includes(query) && !dc.includes(query) && !driver.includes(query)) {
-          return false;
-        }
+        const notes = (s.notes || '').toLowerCase();
+
+        const match =
+          so.includes(query) ||
+          prod.includes(query) ||
+          prodSku.includes(query) ||
+          dcName.includes(query) ||
+          dcCode.includes(query) ||
+          dcCity.includes(query) ||
+          driver.includes(query) ||
+          nopol.includes(query) ||
+          notes.includes(query);
+
+        if (!match) return false;
       }
       return true;
     });
-  }, [shipments, products, dcs, selectedWarehouse, selectedProduct, searchQuery]);
+  }, [shipments, products, dcs, selectedWarehouse, selectedProduct, selectedNetwork, selectedRegion, selectedStatus, dateFrom, dateTo, searchQuery]);
 
   const handleDelete = (id: string, soNumber: string) => {
     if (window.confirm(`Yakin ingin membatalkan & menghapus SO "${soNumber}"? Stok barang akan dikembalikan ke gudang asal.`)) {
@@ -118,26 +179,56 @@ export const ShipmentListView: React.FC<ShipmentListViewProps> = ({
         </div>
       </div>
 
-      {/* Filter toolbar (Pill inputs) */}
-      <div className="clay-glass-card p-4 sm:p-5 flex flex-col sm:flex-row items-center gap-3">
-        {/* Pill Search */}
-        <div className="relative clay-search-pill flex items-center px-3.5 py-1.5 flex-1 w-full">
-          <Search className="w-4 h-4 text-slate-400 shrink-0 mr-2" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Cari nomor SO, nama barang, DC tujuan, atau driver..."
-            className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none"
-          />
+      {/* Filter toolbar (Comprehensive Multi-Dimensional Filter) */}
+      <div className="clay-glass-card p-4 sm:p-5 space-y-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* Pill Search */}
+          <div className="relative clay-search-pill flex items-center px-3.5 py-1.5 sm:col-span-2">
+            <Search className="w-4 h-4 text-slate-400 shrink-0 mr-2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Cari No SO, SKU, DC tujuan, kota, driver, nopol..."
+              className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none"
+            />
+          </div>
+
+          {/* Network Filter */}
+          <div className="clay-search-pill px-3 py-1.5">
+            <select
+              value={selectedNetwork}
+              onChange={e => setSelectedNetwork(e.target.value)}
+              className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+            >
+              <option value="ALL">Semua Jaringan DC</option>
+              <option value="Indomarco">DC Indomarco</option>
+              <option value="Indogrosir">DC Indogrosir</option>
+            </select>
+          </div>
+
+          {/* Region Filter */}
+          <div className="clay-search-pill px-3 py-1.5">
+            <select
+              value={selectedRegion}
+              onChange={e => setSelectedRegion(e.target.value)}
+              className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+            >
+              <option value="ALL">Semua Zona Wilayah</option>
+              {regions.map(r => (
+                <option key={r} value={r}>{r}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* Warehouse Filter */}
           <div className="clay-search-pill px-3 py-1.5">
             <select
               value={selectedWarehouse}
               onChange={e => setSelectedWarehouse(e.target.value)}
-              className="text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+              className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
             >
               <option value="ALL">Semua Gudang Asal</option>
               {warehouses.map(w => (
@@ -146,18 +237,79 @@ export const ShipmentListView: React.FC<ShipmentListViewProps> = ({
             </select>
           </div>
 
+          {/* Product Filter */}
           <div className="clay-search-pill px-3 py-1.5">
             <select
               value={selectedProduct}
               onChange={e => setSelectedProduct(e.target.value)}
-              className="text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+              className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
             >
-              <option value="ALL">Semua Barang</option>
+              <option value="ALL">Semua Produk Kurma</option>
               {products.map(p => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>
           </div>
+
+          {/* Status Filter */}
+          <div className="clay-search-pill px-3 py-1.5">
+            <select
+              value={selectedStatus}
+              onChange={e => setSelectedStatus(e.target.value)}
+              className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+            >
+              <option value="ALL">Semua Status Pengiriman</option>
+              <option value="Terkirim">Terkirim (Tiba di DC)</option>
+              <option value="Dalam Perjalanan">Dalam Perjalanan (On Delivery)</option>
+              <option value="Selesai">Selesai (Completed)</option>
+            </select>
+          </div>
+
+          {/* Date Range Inputs */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="clay-search-pill px-2.5 py-1.5 flex items-center gap-1.5" title="Filter Tanggal Mulai">
+              <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={e => setDateFrom(e.target.value)}
+                className="w-full text-[11px] font-semibold text-slate-800 bg-transparent focus:outline-none"
+              />
+            </div>
+            <div className="clay-search-pill px-2.5 py-1.5 flex items-center gap-1.5" title="Filter Tanggal Akhir">
+              <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <input
+                type="date"
+                value={dateTo}
+                onChange={e => setDateTo(e.target.value)}
+                className="w-full text-[11px] font-semibold text-slate-800 bg-transparent focus:outline-none"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Filter Summary & Quick Reset */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-white/60 text-xs">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-slate-600 font-semibold">
+              Menampilkan <strong>{filteredShipments.length}</strong> dari <strong>{shipments.length}</strong> total Surat Jalan
+            </span>
+            {isFilterActive && (
+              <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-bold">
+                Filter Aktif
+              </span>
+            )}
+          </div>
+
+          {isFilterActive && (
+            <button
+              onClick={handleResetFilters}
+              className="clay-btn-white px-3 py-1 text-xs text-blue-700 hover:text-blue-900 font-bold flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset Semua Filter</span>
+            </button>
+          )}
         </div>
       </div>
 

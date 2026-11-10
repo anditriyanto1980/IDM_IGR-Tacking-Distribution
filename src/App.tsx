@@ -16,6 +16,7 @@ import { ForecastManagerView } from './components/ForecastManagerView';
 import { ShipmentModal } from './components/ShipmentModal';
 import { StockInModal } from './components/StockInModal';
 import { ShipmentDetailModal } from './components/ShipmentDetailModal';
+import { ExportBackupModal } from './components/ExportBackupModal';
 import { Shipment } from './types';
 
 function MainLayout() {
@@ -34,6 +35,9 @@ function MainLayout() {
 
   // Shipment detail modal state
   const [detailShipment, setDetailShipment] = useState<Shipment | null>(null);
+
+  // Export & Backup modal state
+  const [exportModalOpen, setExportModalOpen] = useState(false);
 
   // Filter matrix product state
   const [matrixInitialProductId, setMatrixInitialProductId] = useState<string | undefined>(undefined);
@@ -86,6 +90,7 @@ function MainLayout() {
         setActiveTab={setActiveTab}
         onOpenShipmentModal={handleOpenNewShipment}
         onOpenStockInModal={() => handleOpenStockIn()}
+        onOpenExportModal={() => setExportModalOpen(true)}
       />
 
       {/* Main Content Container - Full Width edge-to-edge */}
@@ -96,6 +101,7 @@ function MainLayout() {
             onOpenShipmentModal={handleOpenNewShipment}
             onOpenStockInModal={() => handleOpenStockIn()}
             onFilterMatrixByProduct={handleFilterMatrixByProduct}
+            onOpenExportModal={() => setExportModalOpen(true)}
           />
         )}
 
@@ -163,6 +169,12 @@ function MainLayout() {
       <ShipmentDetailModal
         shipment={detailShipment}
         onClose={() => setDetailShipment(null)}
+      />
+
+      {/* Export and Backup CSV Modal */}
+      <ExportBackupModal
+        isOpen={exportModalOpen}
+        onClose={() => setExportModalOpen(false)}
       />
     </div>
   );

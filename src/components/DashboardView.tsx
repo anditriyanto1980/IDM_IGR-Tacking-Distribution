@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { formatNumber, formatPercent, formatDate } from '../utils/formatters';
 import { ActiveTab } from './Navbar';
@@ -18,7 +18,10 @@ import {
   Clock,
   Sparkles,
   MapPin,
-  Truck
+  Truck,
+  FileSpreadsheet,
+  RotateCcw,
+  Filter
 } from 'lucide-react';
 import { 
   ClayTruck, 
@@ -34,13 +37,15 @@ interface DashboardViewProps {
   onOpenShipmentModal: (defaultDcId?: string, defaultProductId?: string) => void;
   onOpenStockInModal: (warehouseId?: string, productId?: string) => void;
   onFilterMatrixByProduct?: (productId: string) => void;
+  onOpenExportModal?: () => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
   setActiveTab,
   onOpenShipmentModal,
   onOpenStockInModal,
-  onFilterMatrixByProduct
+  onFilterMatrixByProduct,
+  onOpenExportModal
 }) => {
   const { 
     products, 
@@ -54,32 +59,70 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     isFirebaseConnected 
   } = useApp();
 
-  // 1. National High-Level Aggregates
+  // Interactive Dashboard Scope Filters
+  const [scopeNetwork, setScopeNetwork] = useState<'ALL' | 'Indomarco' | 'Indogrosir'>('ALL');
+  const [scopeRegion, setScopeRegion] = useState<string>('ALL');
+  const [scopeProduct, setScopeProduct] = useState<string>('ALL');
+  const [scopeForecastTier, setScopeForecastTier] = useState<'ALL' | 'TIER_HIGH' | 'TIER_MED' | 'TIER_LOW'>('ALL');
+  const [regionalSort, setRegionalSort] = useState<'FORECAST_DESC' | 'FORECAST_ASC' | 'PCT_DESC' | 'PCT_ASC'>('FORECAST_DESC');
+
+  const regions = useMemo(() => Array.from(new Set(dcs.map(d => d.region))).sort(), [dcs]);
+
+  const isScopeActive = useMemo(() => {
+    return scopeNetwork !== 'ALL' || scopeRegion !== 'ALL' || scopeProduct !== 'ALL' || scopeForecastTier !== 'ALL';
+  }, [scopeNetwork, scopeRegion, scopeProduct, scopeForecastTier]);
+
+  const handleResetScope = () => {
+    setScopeNetwork('ALL');
+    setScopeRegion('ALL');
+    setScopeProduct('ALL');
+    setScopeForecastTier('ALL');
+  };
+
+  // Filtered controlling summaries according to scope
+  const activeSummaries = useMemo(() => {
+    return controllingSummaries.filter(s => {
+      if (scopeNetwork !== 'ALL' && s.dc.network !== scopeNetwork) return false;
+      if (scopeRegion !== 'ALL' && s.dc.region !== scopeRegion) return false;
+      if (scopeProduct !== 'ALL' && s.productId !== scopeProduct) return false;
+      if (scopeForecastTier !== 'ALL') {
+        if (scopeForecastTier === 'TIER_HIGH' && s.forecastQty < 5000) return false;
+        if (scopeForecastTier === 'TIER_MED' && (s.forecastQty < 1000 || s.forecastQty >= 5000)) return false;
+        if (scopeForecastTier === 'TIER_LOW' && s.forecastQty >= 1000) return false;
+      }
+      return true;
+    });
+  }, [controllingSummaries, scopeNetwork, scopeRegion, scopeProduct, scopeForecastTier]);
+
+  // 1. High-Level Aggregates (Scope-aware)
   const totalForecast = useMemo(() => {
-    return controllingSummaries.reduce((sum, item) => sum + item.forecastQty, 0);
-  }, [controllingSummaries]);
+    return activeSummaries.reduce((sum, item) => sum + item.forecastQty, 0);
+  }, [activeSummaries]);
 
   const totalSent = useMemo(() => {
-    return controllingSummaries.reduce((sum, item) => sum + item.sentQty, 0);
-  }, [controllingSummaries]);
+    return activeSummaries.reduce((sum, item) => sum + item.sentQty, 0);
+  }, [activeSummaries]);
 
   const totalRemaining = Math.max(0, totalForecast - totalSent);
   const nationalFulfilledPct = totalForecast > 0 ? (totalSent / totalForecast) * 100 : 0;
   const nationalRemainingPct = Math.max(0, 100 - nationalFulfilledPct);
 
-  // Total Stock in All Warehouses
+  // Total Stock in All Warehouses (for selected product or all)
   const totalAvailableStock = useMemo(() => {
+    if (scopeProduct !== 'ALL') {
+      return stocks.filter(s => s.productId === scopeProduct).reduce((sum, s) => sum + s.qty, 0);
+    }
     return stocks.reduce((sum, s) => sum + s.qty, 0);
-  }, [stocks]);
+  }, [stocks, scopeProduct]);
 
-  // Overall stock readiness ratio (Stock / Remaining Need)
+  // Overall stock readiness ratio
   const stockCoverageRatio = totalRemaining > 0 ? (totalAvailableStock / totalRemaining) * 100 : 100;
   const isStockSufficient = totalAvailableStock >= totalRemaining;
 
   // 2. Network Aggregates (Indomarco vs Indogrosir)
   const networkMetrics = useMemo(() => {
-    const idmSummaries = controllingSummaries.filter(s => s.dc.network === 'Indomarco');
-    const igrSummaries = controllingSummaries.filter(s => s.dc.network === 'Indogrosir');
+    const idmSummaries = activeSummaries.filter(s => s.dc.network === 'Indomarco');
+    const igrSummaries = activeSummaries.filter(s => s.dc.network === 'Indogrosir');
 
     const idmFc = idmSummaries.reduce((sum, s) => sum + s.forecastQty, 0);
     const idmSent = idmSummaries.reduce((sum, s) => sum + s.sentQty, 0);
@@ -91,20 +134,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     const igrRem = Math.max(0, igrFc - igrSent);
     const igrPct = igrFc > 0 ? (igrSent / igrFc) * 100 : 0;
 
-    const idmDcs = dcs.filter(d => d.network === 'Indomarco').length;
-    const igrDcs = dcs.filter(d => d.network === 'Indogrosir').length;
+    const activeDcs = dcs.filter(d => scopeRegion === 'ALL' || d.region === scopeRegion);
+    const idmDcs = activeDcs.filter(d => d.network === 'Indomarco').length;
+    const igrDcs = activeDcs.filter(d => d.network === 'Indogrosir').length;
 
     return {
       idm: { fc: idmFc, sent: idmSent, rem: idmRem, pct: idmPct, dcsCount: idmDcs },
       igr: { fc: igrFc, sent: igrSent, rem: igrRem, pct: igrPct, dcsCount: igrDcs },
     };
-  }, [controllingSummaries, dcs]);
+  }, [activeSummaries, dcs, scopeRegion]);
 
-  // 3. Product-by-Product Detailed Metrics (IDM vs IGR Breakdown)
+  // 3. Product-by-Product Detailed Metrics
   const productMetrics = useMemo(() => {
-    return products.map(prod => {
-      // Summaries for this product
-      const pSummaries = controllingSummaries.filter(s => s.productId === prod.id);
+    const prodsToDisplay = scopeProduct !== 'ALL'
+      ? products.filter(p => p.id === scopeProduct)
+      : products;
+
+    return prodsToDisplay.map(prod => {
+      // Summaries for this product within scope
+      const pSummaries = activeSummaries.filter(s => s.productId === prod.id);
 
       // IDM breakdown
       const idmItems = pSummaries.filter(s => s.dc.network === 'Indomarco');
@@ -140,12 +188,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         isStockSafe: physicalStock >= totalProdRem,
       };
     });
-  }, [products, controllingSummaries, getTotalStock]);
+  }, [products, activeSummaries, scopeProduct, getTotalStock]);
 
-  // 4. Regional Distribution Completion Rate
+  // 4. Regional Distribution Completion Rate (Scope-aware)
   const regionalMetrics = useMemo(() => {
     const regionMap: Record<string, { forecast: number; sent: number; count: number }> = {};
-    controllingSummaries.forEach(s => {
+    activeSummaries.forEach(s => {
       const reg = s.dc.region;
       if (!regionMap[reg]) {
         regionMap[reg] = { forecast: 0, sent: 0, count: 0 };
@@ -155,19 +203,37 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       regionMap[reg].count += 1;
     });
 
-    return Object.entries(regionMap).map(([region, data]) => ({
+    const list = Object.entries(regionMap).map(([region, data]) => ({
       region,
       forecast: data.forecast,
       sent: data.sent,
       remaining: Math.max(0, data.forecast - data.sent),
       pct: data.forecast > 0 ? (data.sent / data.forecast) * 100 : 0
-    })).sort((a, b) => b.forecast - a.forecast);
-  }, [controllingSummaries]);
+    }));
 
-  // 5. Urgent DC Supply Queue (Lowest fulfillment completion)
+    if (regionalSort === 'FORECAST_DESC') {
+      list.sort((a, b) => b.forecast - a.forecast);
+    } else if (regionalSort === 'FORECAST_ASC') {
+      list.sort((a, b) => a.forecast - b.forecast);
+    } else if (regionalSort === 'PCT_DESC') {
+      list.sort((a, b) => b.pct - a.pct);
+    } else if (regionalSort === 'PCT_ASC') {
+      list.sort((a, b) => a.pct - b.pct);
+    }
+
+    return list;
+  }, [activeSummaries, regionalSort]);
+
+  // 5. Urgent DC Supply Queue (Lowest fulfillment completion within scope)
   const priorityDcs = useMemo(() => {
-    const list = dcs.map(dc => {
-      const dcSummaries = controllingSummaries.filter(s => s.dc.id === dc.id);
+    const filteredDcs = dcs.filter(d => {
+      if (scopeNetwork !== 'ALL' && d.network !== scopeNetwork) return false;
+      if (scopeRegion !== 'ALL' && d.region !== scopeRegion) return false;
+      return true;
+    });
+
+    const list = filteredDcs.map(dc => {
+      const dcSummaries = activeSummaries.filter(s => s.dc.id === dc.id);
       const dcFc = dcSummaries.reduce((sum, s) => sum + s.forecastQty, 0);
       const dcSent = dcSummaries.reduce((sum, s) => sum + s.sentQty, 0);
       const pct = dcFc > 0 ? (dcSent / dcFc) * 100 : 0;
@@ -182,7 +248,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     });
 
     return list.sort((a, b) => a.pct - b.pct).slice(0, 5);
-  }, [dcs, controllingSummaries]);
+  }, [dcs, activeSummaries, scopeNetwork, scopeRegion]);
 
   // 6. Recent Shipments (Latest 5 SOs)
   const recentShipments = useMemo(() => {
@@ -210,6 +276,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
+          {onOpenExportModal && (
+            <button
+              onClick={onOpenExportModal}
+              className="clay-btn-white px-4 py-2 text-xs flex items-center gap-1.5 shadow-md cursor-pointer font-bold text-slate-800"
+              title="Pusat Ekspor CSV & Cadangan Backup Data"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+              <span>Ekspor / Backup CSV</span>
+            </button>
+          )}
+
           <button
             onClick={() => onOpenStockInModal()}
             className="clay-btn-emerald px-4 py-2 text-xs flex items-center gap-1.5 shadow-md cursor-pointer"
@@ -225,6 +302,101 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <Plus className="w-4 h-4" />
             <span>+ Buat SO Baru</span>
           </button>
+        </div>
+      </div>
+
+      {/* Interactive Scope Filter Bar */}
+      <div className="clay-glass-card p-3 sm:p-4 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 shadow-md border border-white/60">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 text-xs font-black text-slate-800 bg-white/80 px-3 py-1.5 rounded-xl border border-white shadow-xs">
+            <Filter className="w-4 h-4 text-blue-600" />
+            <span>Filter Lingkup Analisis:</span>
+          </div>
+
+          {/* Jaringan DC */}
+          <div className="inline-flex p-1 bg-slate-100/90 rounded-xl border border-slate-200/80 shadow-inner">
+            <button
+              onClick={() => setScopeNetwork('ALL')}
+              className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                scopeNetwork === 'ALL'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Semua Jaringan
+            </button>
+            <button
+              onClick={() => setScopeNetwork('Indomarco')}
+              className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                scopeNetwork === 'Indomarco'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Indomarco
+            </button>
+            <button
+              onClick={() => setScopeNetwork('Indogrosir')}
+              className={`px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                scopeNetwork === 'Indogrosir'
+                  ? 'bg-red-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Indogrosir
+            </button>
+          </div>
+
+          {/* Wilayah / Zona */}
+          <select
+            value={scopeRegion}
+            onChange={(e) => setScopeRegion(e.target.value)}
+            className="clay-search-pill text-xs font-bold text-slate-800 py-1.5 px-3 bg-white/90 border border-slate-200 cursor-pointer rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="ALL">🌐 Semua Zona Wilayah</option>
+            {regions.map(reg => (
+              <option key={reg} value={reg}>📍 {reg}</option>
+            ))}
+          </select>
+
+          {/* Produk Kurma */}
+          <select
+            value={scopeProduct}
+            onChange={(e) => setScopeProduct(e.target.value)}
+            className="clay-search-pill text-xs font-bold text-slate-800 py-1.5 px-3 bg-white/90 border border-slate-200 cursor-pointer rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 max-w-[200px] truncate"
+          >
+            <option value="ALL">📦 Semua Varian Kurma</option>
+            {products.map(p => (
+              <option key={p.id} value={p.id}>🌴 {p.name}</option>
+            ))}
+          </select>
+
+          {/* Filter Rentang Qty Target */}
+          <select
+            value={scopeForecastTier}
+            onChange={(e) => setScopeForecastTier(e.target.value as any)}
+            className="clay-search-pill text-xs font-bold text-slate-800 py-1.5 px-3 bg-white/90 border border-slate-200 cursor-pointer rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="ALL">🎯 Semua Qty Target</option>
+            <option value="TIER_HIGH">🔥 Qty Besar (&ge; 5.000 ctn)</option>
+            <option value="TIER_MED">⚡ Qty Sedang (1.000 - 4.999 ctn)</option>
+            <option value="TIER_LOW">📦 Qty Kecil (&lt; 1.000 ctn)</option>
+          </select>
+        </div>
+
+        <div className="flex items-center gap-2 self-end md:self-center">
+          {isScopeActive && (
+            <button
+              onClick={handleResetScope}
+              className="clay-btn-white text-xs px-3 py-1.5 flex items-center gap-1.5 text-rose-600 font-bold hover:bg-rose-50 border border-rose-200 shadow-xs cursor-pointer rounded-xl transition-all"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset Filter</span>
+            </button>
+          )}
+          <span className="text-[11px] font-bold text-slate-500 bg-white/80 px-2.5 py-1 rounded-lg border border-slate-200">
+            {activeSummaries.length} Kombinasi Data DC
+          </span>
         </div>
       </div>
 
@@ -695,25 +867,92 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
 
-          {/* Regional Summary Grid */}
+          {/* Regional Summary Grid with Qty Wilayah Sorting */}
           <div className="clay-card p-5">
-            <h4 className="font-black text-slate-900 text-sm mb-2.5">
-              Capaian Realisasi per Wilayah Distribusi
-            </h4>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+              <div>
+                <h4 className="font-black text-slate-900 text-sm">
+                  Capaian Realisasi per Wilayah Distribusi
+                </h4>
+                <p className="text-[11px] text-slate-500 font-medium">
+                  {regionalSort === 'FORECAST_DESC'
+                    ? 'Diurutkan dari kuantiti forecast terbanyak ke terkecil'
+                    : regionalSort === 'FORECAST_ASC'
+                    ? 'Diurutkan dari kuantiti forecast terkecil ke terbanyak'
+                    : 'Diurutkan berdasarkan persentase capaian'} (Klik wilayah untuk filter dashboard)
+                </p>
+              </div>
+
+              {/* Sorting Switcher */}
+              <div className="inline-flex p-0.5 bg-slate-100 rounded-lg border border-slate-200 self-start sm:self-auto">
+                <button
+                  onClick={() => setRegionalSort('FORECAST_DESC')}
+                  className={`px-2.5 py-1 text-[11px] font-extrabold rounded-md transition-all cursor-pointer ${
+                    regionalSort === 'FORECAST_DESC'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="Urutkan wilayah dari target kuantiti forecast terbanyak ke terkecil"
+                >
+                  Qty Terbanyak ↓
+                </button>
+                <button
+                  onClick={() => setRegionalSort('FORECAST_ASC')}
+                  className={`px-2.5 py-1 text-[11px] font-extrabold rounded-md transition-all cursor-pointer ${
+                    regionalSort === 'FORECAST_ASC'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="Urutkan wilayah dari target kuantiti forecast terkecil ke terbanyak"
+                >
+                  Qty Terkecil ↑
+                </button>
+                <button
+                  onClick={() => setRegionalSort(regionalSort === 'PCT_DESC' ? 'PCT_ASC' : 'PCT_DESC')}
+                  className={`px-2 py-1 text-[11px] font-extrabold rounded-md transition-all cursor-pointer ${
+                    regionalSort === 'PCT_DESC' || regionalSort === 'PCT_ASC'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="Urutkan persentase realisasi kiriman"
+                >
+                  % {regionalSort === 'PCT_ASC' ? 'Terendah ↑' : 'Tertinggi ↓'}
+                </button>
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-              {regionalMetrics.map(r => (
-                <div key={r.region} className="clay-chip-white p-2.5 text-center">
-                  <span className="text-[11px] font-bold text-slate-700 block truncate" title={r.region}>
-                    {r.region}
-                  </span>
-                  <div className="text-base font-black text-blue-700 mt-0.5">
-                    {formatPercent(r.pct, 0)}
-                  </div>
-                  <span className="text-[10px] text-slate-500 font-semibold block">
-                    {formatNumber(r.sent)} / {formatNumber(r.forecast)}
-                  </span>
-                </div>
-              ))}
+              {regionalMetrics.map(r => {
+                const isSelected = scopeRegion === r.region;
+                return (
+                  <button
+                    key={r.region}
+                    onClick={() => setScopeRegion(isSelected ? 'ALL' : r.region)}
+                    className={`p-2.5 rounded-xl text-center transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-blue-700 text-white shadow-md'
+                        : 'clay-chip-white hover:bg-blue-50 text-slate-800 border border-slate-100'
+                    }`}
+                    title={`Klik untuk filter lingkup dashboard ke wilayah ${r.region}`}
+                  >
+                    <span className={`text-[11px] font-bold block truncate ${
+                      isSelected ? 'text-white' : 'text-slate-700'
+                    }`}>
+                      {r.region}
+                    </span>
+                    <div className={`text-base font-black mt-0.5 ${
+                      isSelected ? 'text-blue-100' : 'text-blue-700'
+                    }`}>
+                      {formatPercent(r.pct, 0)}
+                    </div>
+                    <span className={`text-[10px] font-semibold block ${
+                      isSelected ? 'text-blue-200' : 'text-slate-500'
+                    }`}>
+                      {formatNumber(r.sent)} / {formatNumber(r.forecast)} ctn
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>

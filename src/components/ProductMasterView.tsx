@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { Product } from '../types';
 import { formatNumber } from '../utils/formatters';
@@ -9,7 +9,14 @@ import {
   Edit3, 
   Trash2, 
   Check, 
-  Warehouse as WarehouseIcon
+  Warehouse as WarehouseIcon,
+  Search,
+  Filter,
+  RotateCcw,
+  SlidersHorizontal,
+  ArrowUpDown,
+  AlertTriangle,
+  CheckCircle2
 } from 'lucide-react';
 import { ClayKurmaPackage } from './ClayIcons';
 
@@ -18,6 +25,12 @@ export const ProductMasterView: React.FC = () => {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+
+  // Filters
+  const [searchQuery, setSearchQuery] = useState('');
+  const [stockStatusFilter, setStockStatusFilter] = useState<'ALL' | 'SAFE' | 'LOW' | 'OUT'>('ALL');
+  const [fulfillmentFilter, setFulfillmentFilter] = useState<'ALL' | 'ACHIEVED' | 'PROGRESS' | 'CRITICAL'>('ALL');
+  const [sortBy, setSortBy] = useState<'NAME_ASC' | 'STOCK_DESC' | 'STOCK_ASC' | 'FULFILL_DESC' | 'FULFILL_ASC'>('NAME_ASC');
 
   const handleOpenAdd = () => {
     setEditingProduct(null);
@@ -37,6 +50,78 @@ export const ProductMasterView: React.FC = () => {
       }
     }
   };
+
+  const isFilterActive = useMemo(() => {
+    return Boolean(
+      searchQuery.trim() ||
+      stockStatusFilter !== 'ALL' ||
+      fulfillmentFilter !== 'ALL' ||
+      sortBy !== 'NAME_ASC'
+    );
+  }, [searchQuery, stockStatusFilter, fulfillmentFilter, sortBy]);
+
+  const handleResetFilters = () => {
+    setSearchQuery('');
+    setStockStatusFilter('ALL');
+    setFulfillmentFilter('ALL');
+    setSortBy('NAME_ASC');
+  };
+
+  // Filter and sort products
+  const filteredProducts = useMemo(() => {
+    return products
+      .map(prod => {
+        const totalStock = getTotalStock(prod.id);
+        const pSummaries = controllingSummaries.filter(s => s.productId === prod.id);
+        const totalForecast = pSummaries.reduce((sum, s) => sum + s.forecastQty, 0);
+        const totalSent = pSummaries.reduce((sum, s) => sum + s.sentQty, 0);
+        const fulfillmentPct = totalForecast > 0 ? (totalSent / totalForecast) * 100 : 0;
+        const isLow = totalStock <= prod.minStockAlert;
+        const isOut = totalStock <= 0;
+
+        return {
+          prod,
+          totalStock,
+          totalForecast,
+          totalSent,
+          fulfillmentPct,
+          isLow,
+          isOut
+        };
+      })
+      .filter(item => {
+        // Search
+        if (searchQuery.trim()) {
+          const q = searchQuery.toLowerCase();
+          const match =
+            item.prod.name.toLowerCase().includes(q) ||
+            item.prod.sku.toLowerCase().includes(q) ||
+            item.prod.packSize.toLowerCase().includes(q) ||
+            (item.prod.description || '').toLowerCase().includes(q);
+          if (!match) return false;
+        }
+
+        // Stock Status
+        if (stockStatusFilter === 'SAFE' && (item.isLow || item.isOut)) return false;
+        if (stockStatusFilter === 'LOW' && (!item.isLow || item.isOut)) return false;
+        if (stockStatusFilter === 'OUT' && !item.isOut) return false;
+
+        // Fulfillment
+        if (fulfillmentFilter === 'ACHIEVED' && item.fulfillmentPct < 100) return false;
+        if (fulfillmentFilter === 'PROGRESS' && (item.fulfillmentPct < 50 || item.fulfillmentPct >= 100)) return false;
+        if (fulfillmentFilter === 'CRITICAL' && item.fulfillmentPct >= 50) return false;
+
+        return true;
+      })
+      .sort((a, b) => {
+        if (sortBy === 'NAME_ASC') return a.prod.name.localeCompare(b.prod.name);
+        if (sortBy === 'STOCK_DESC') return b.totalStock - a.totalStock;
+        if (sortBy === 'STOCK_ASC') return a.totalStock - b.totalStock;
+        if (sortBy === 'FULFILL_DESC') return b.fulfillmentPct - a.fulfillmentPct;
+        if (sortBy === 'FULFILL_ASC') return a.fulfillmentPct - b.fulfillmentPct;
+        return 0;
+      });
+  }, [products, controllingSummaries, getTotalStock, searchQuery, stockStatusFilter, fulfillmentFilter, sortBy]);
 
   return (
     <div className="space-y-6 pb-12 text-slate-900">
@@ -60,16 +145,112 @@ export const ProductMasterView: React.FC = () => {
         </button>
       </div>
 
-      {/* Product Cards Grid (3D Clay Cards) */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        {products.map((prod, idx) => {
-          const totalStock = getTotalStock(prod.id);
-          const pSummaries = controllingSummaries.filter(s => s.productId === prod.id);
-          const totalForecast = pSummaries.reduce((sum, s) => sum + s.forecastQty, 0);
-          const totalSent = pSummaries.reduce((sum, s) => sum + s.sentQty, 0);
-          const fulfillmentPct = totalForecast > 0 ? (totalSent / totalForecast) * 100 : 0;
+      {/* Filter and Search Toolbar */}
+      <div className="clay-glass-card p-4 sm:p-5 space-y-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* Search Input */}
+          <div className="relative clay-search-pill flex items-center px-3.5 py-1.5">
+            <Search className="w-4 h-4 text-slate-400 shrink-0 mr-2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Cari nama kurma, SKU, isi kemasan..."
+              className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none"
+            />
+          </div>
 
-          return (
+          {/* Stock Status Filter */}
+          <div className="clay-search-pill px-3 py-1.5">
+            <select
+              value={stockStatusFilter}
+              onChange={e => setStockStatusFilter(e.target.value as any)}
+              className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+            >
+              <option value="ALL">Semua Kondisi Stok</option>
+              <option value="SAFE">Stok Aman (&gt; Batas Minimum)</option>
+              <option value="LOW">Stok Menipis (&le; Batas Minimum)</option>
+              <option value="OUT">Stok Habis / Kosong (0 Ctn)</option>
+            </select>
+          </div>
+
+          {/* Fulfillment Filter */}
+          <div className="clay-search-pill px-3 py-1.5">
+            <select
+              value={fulfillmentFilter}
+              onChange={e => setFulfillmentFilter(e.target.value as any)}
+              className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+            >
+              <option value="ALL">Semua Capaian Suplai</option>
+              <option value="ACHIEVED">Tercapai (&ge; 100%)</option>
+              <option value="PROGRESS">Sedang Berjalan (50% - 99%)</option>
+              <option value="CRITICAL">Kritis (&lt; 50%)</option>
+            </select>
+          </div>
+
+          {/* Sort Selector */}
+          <div className="clay-search-pill px-3 py-1.5">
+            <select
+              value={sortBy}
+              onChange={e => setSortBy(e.target.value as any)}
+              className="w-full text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+            >
+              <option value="NAME_ASC">Urutkan: Nama Barang (A - Z)</option>
+              <option value="STOCK_DESC">Urutkan: Stok Fisik Terbanyak</option>
+              <option value="STOCK_ASC">Urutkan: Stok Fisik Tersedikit</option>
+              <option value="FULFILL_DESC">Urutkan: Capaian % Tertinggi</option>
+              <option value="FULFILL_ASC">Urutkan: Capaian % Terendah</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Filter Summary & Reset Bar */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-white/60 text-xs">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-slate-600 font-semibold">
+              Menampilkan <strong>{filteredProducts.length}</strong> dari <strong>{products.length}</strong> produk
+            </span>
+            {isFilterActive && (
+              <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-bold">
+                Filter Aktif
+              </span>
+            )}
+          </div>
+
+          {isFilterActive && (
+            <button
+              onClick={handleResetFilters}
+              className="clay-btn-white px-3 py-1 text-xs text-blue-700 hover:text-blue-900 font-bold flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset Filter</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Product Cards Grid (3D Clay Cards) */}
+      {filteredProducts.length === 0 ? (
+        <div className="clay-glass-card p-10 text-center space-y-3">
+          <div className="w-14 h-14 rounded-3xl bg-blue-50 text-blue-500 mx-auto flex items-center justify-center">
+            <Package className="w-7 h-7" />
+          </div>
+          <h3 className="font-bold text-slate-800 text-base">Tidak ada produk yang cocok</h3>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto">
+            Tidak ditemukan barang kurma yang sesuai dengan kata kunci atau filter status yang dipilih.
+          </p>
+          <button
+            onClick={handleResetFilters}
+            className="clay-btn-apply px-4 py-2 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-md"
+          >
+            <RotateCcw className="w-4 h-4" />
+            <span>Reset Filter</span>
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          {filteredProducts.map(({ prod, totalStock, totalForecast, totalSent, fulfillmentPct }, idx) => {
+            return (
             <div
               key={prod.id}
               className="clay-glass-card p-5 flex flex-col justify-between hover:shadow-xl transition-all"
@@ -166,6 +347,7 @@ export const ProductMasterView: React.FC = () => {
           );
         })}
       </div>
+      )}
 
       <ProductModal
         isOpen={modalOpen}
